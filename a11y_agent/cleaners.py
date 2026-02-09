@@ -303,8 +303,8 @@ def enrich_iframe_titles(
                 continue
 
             src = urljoin(base_url, raw_src) if base_url else raw_src
-            cur_title = fr.get("title") or ""
-            t_norm = cur_title.strip().lower()
+            cur_title = (fr.get("title") or "").strip()
+            t_norm = cur_title.lower()
 
             need = False
             if not t_norm:
@@ -315,7 +315,7 @@ def enrich_iframe_titles(
                 need = True
             elif t_norm == src.lower():
                 need = True
-            elif t_norm in GENERIC_IFRAME_TITLES:
+            elif cur_title.lower() in GENERIC_IFRAME_TITLES:
                 need = True
 
             if not need:
