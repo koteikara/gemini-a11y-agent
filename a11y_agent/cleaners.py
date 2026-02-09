@@ -58,6 +58,9 @@ FILEINFO_PATTERNS = [
 URLISH_TITLE_PAT = re.compile(r"^(https?://|/).+", re.IGNORECASE)
 YOUTUBE_EMBED_PAT = re.compile(r"^https?://(?:www\.)?(?:youtube\.com|youtube-nocookie\.com)/embed/([A-Za-z0-9_-]{6,})", re.IGNORECASE)
 GENERIC_IFRAME_TITLES = {"youtube video player", "youtube", "video player", "player"}
+GENERIC_VIDEO_TITLES = {"video", "動画", "movie"}
+YOUTUBE_SUFFIX = "（YouTube）"
+MAX_IFRAME_TITLE_LEN = 40
 
 # --- UI的テキストパターン（table判定用） ---
 UIISH_TEXT_PAT = re.compile(
@@ -186,6 +189,66 @@ def fetch_youtube_oembed_title(embed_url: str, timeout_sec: int = IFRAME_TITLE_F
         return ""
 
 
+def _clean_title_seed(text: str) -> str:
+    t = re.sub(r"\s+", " ", str(text or "")).strip()
+    t = re.sub(r"[【】\[\]<>＜＞]", " ", t)
+    t = re.sub(r"\s*[|｜\-–—]\s*", " ", t)
+    t = re.sub(r"\s*\(?\s*YouTube\s*\)?\s*", " ", t, flags=re.IGNORECASE)
+    return re.sub(r"\s{2,}", " ", t).strip(" 　-–—|｜")
+
+
+def _format_youtube_iframe_title(base_title: str) -> str:
+    cleaned = _clean_title_seed(base_title)
+    if not cleaned:
+        cleaned = "動画"
+
+    if "動画" in cleaned:
+        full = f"{cleaned}{YOUTUBE_SUFFIX}"
+    else:
+        full = f"{cleaned}の動画{YOUTUBE_SUFFIX}"
+
+    if len(full) <= MAX_IFRAME_TITLE_LEN:
+        return full
+
+    suffix = YOUTUBE_SUFFIX
+    core = full
+    if core.endswith(suffix):
+        core = core[:-len(suffix)]
+
+    keep = max(1, MAX_IFRAME_TITLE_LEN - len(suffix) - 1)
+    return f"{core[:keep]}…{suffix}"
+
+
+def _extract_context_text(iframe_tag: Tag) -> str:
+    targets = ["h1", "h2", "h3", "h4", "h5", "h6", "p"]
+    node = iframe_tag
+    while isinstance(node, Tag) and node.parent is not None:
+        for sib in node.find_previous_siblings():
+            if not isinstance(sib, Tag):
+                continue
+            cands = []
+            if sib.name in targets:
+                cands.append(sib)
+            cands.extend(sib.find_all(targets))
+            for cand in reversed(cands):
+                txt = _clean_title_seed(cand.get_text(" ", strip=True))
+                if txt:
+                    return txt
+        node = node.parent
+    return ""
+
+
+def _is_bad_youtube_title(cur_title: str) -> bool:
+    t_norm = re.sub(r"\s+", " ", cur_title).strip().lower()
+    if not t_norm:
+        return True
+    if t_norm in GENERIC_IFRAME_TITLES:
+        return True
+    if t_norm in GENERIC_VIDEO_TITLES:
+        return True
+    return False
+
+
 # ==============================================================================
 # 公開関数
 # ==============================================================================
@@ -293,14 +356,14 @@ def enrich_iframe_titles(
     fetch_timeout_sec: int = IFRAME_TITLE_FETCH_TIMEOUT,
     log: bool = False,
 ) -> str:
-    """iframe titleをsrc先情報で補完（YouTubeはoEmbed優先）。"""
+    """iframe titleをYouTube中心に補完・整形（再実行安全）。"""
     try:
         soup = BeautifulSoup(html_content, "html.parser")
         iframes = soup.find_all("iframe")
         if not iframes:
             return str(soup)
 
-        cache = {}
+        cache = {}  # src -> (base_title, method)
         fetched = 0
         updated_count = 0
         skipped_count = 0
@@ -318,42 +381,67 @@ def enrich_iframe_titles(
             cur_title = cur_title_raw.strip()
             t_norm = re.sub(r"\s+", " ", cur_title).strip().lower()
 
+            is_youtube = bool(YOUTUBE_EMBED_PAT.match(src.split("?", 1)[0]))
+
             need = False
-            if not t_norm:
-                need = True
-            elif URLISH_TITLE_PAT.match(cur_title):
-                need = True
-            elif t_norm == raw_src.lower():
-                need = True
-            elif t_norm == src.lower():
-                need = True
-            elif FEATURE_IFRAME_TITLE_GENERIC_FIX and t_norm in GENERIC_IFRAME_TITLES:
-                need = True
+            if is_youtube:
+                if _is_bad_youtube_title(cur_title):
+                    need = True
+                elif YOUTUBE_SUFFIX not in cur_title:
+                    need = True
+                elif len(cur_title) > MAX_IFRAME_TITLE_LEN:
+                    need = True
+            else:
+                if not t_norm:
+                    need = True
+                elif URLISH_TITLE_PAT.match(cur_title):
+                    need = True
+                elif t_norm == raw_src.lower():
+                    need = True
+                elif t_norm == src.lower():
+                    need = True
+                elif FEATURE_IFRAME_TITLE_GENERIC_FIX and t_norm in GENERIC_IFRAME_TITLES:
+                    need = True
 
             if not need:
                 skipped_count += 1
                 continue
 
             if fetched >= fetch_cap_per_page and src not in cache:
-                skipped_count += 1
                 cap_reached_count += 1
-                continue
-
-            method = "cache"
-            if src in cache:
-                new_title = cache[src]
-            else:
-                method = "oembed"
-                if FEATURE_IFRAME_YT_OEMBED:
-                    new_title = fetch_youtube_oembed_title(src, timeout_sec=fetch_timeout_sec)
+                if is_youtube:
+                    base_title = _extract_context_text(fr)
+                    method = "context_text" if base_title else "fallback"
+                    new_title = _format_youtube_iframe_title(base_title or "動画")
                 else:
-                    new_title = ""
-                if not new_title:
-                    method = "html_title"
-                    new_title = fetch_title_from_url(src, timeout_sec=fetch_timeout_sec)
-                if new_title:
-                    cache[src] = new_title
-                fetched += 1
+                    skipped_count += 1
+                    continue
+            else:
+                method = "cache"
+                if src in cache:
+                    base_title, method = cache[src]
+                else:
+                    base_title = ""
+                    if is_youtube and FEATURE_IFRAME_YT_OEMBED:
+                        base_title = fetch_youtube_oembed_title(src, timeout_sec=fetch_timeout_sec)
+                        method = "youtube_oembed" if base_title else ""
+                    if not base_title:
+                        if is_youtube:
+                            base_title = _extract_context_text(fr)
+                            method = "context_text" if base_title else "fallback"
+                            if not base_title:
+                                base_title = "動画"
+                        else:
+                            method = "html_title"
+                            base_title = fetch_title_from_url(src, timeout_sec=fetch_timeout_sec)
+                    if base_title:
+                        cache[src] = (base_title, method)
+                    fetched += 1
+
+                if is_youtube:
+                    new_title = _format_youtube_iframe_title(base_title)
+                else:
+                    new_title = base_title
 
             if new_title and new_title != cur_title_raw:
                 fr["title"] = new_title
