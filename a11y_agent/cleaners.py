@@ -167,13 +167,13 @@ def fetch_title_from_url(src_url: str, timeout_sec: int = IFRAME_TITLE_FETCH_TIM
         return ""
 
 
-def fetch_youtube_oembed_title(embed_url: str, timeout_sec: int = IFRAME_TITLE_FETCH_TIMEOUT) -> str:
+def fetch_youtube_oembed_title(embed_url: str, timeout_sec: int = IFRAME_TITLE_FETCH_TIMEOUT):
     """YouTube埋め込みURLのoEmbedから動画タイトルを取得。"""
-    try:
-        canonical_embed_url = embed_url.split("?", 1)[0]
-        if not YOUTUBE_EMBED_PAT.match(canonical_embed_url):
-            return ""
+    canonical_embed_url = embed_url.split("?", 1)[0]
+    if not YOUTUBE_EMBED_PAT.match(canonical_embed_url):
+        return "", "invalid_youtube_embed"
 
+    try:
         endpoint = "https://www.youtube.com/oembed"
         resp = requests.get(
             endpoint,
@@ -181,12 +181,21 @@ def fetch_youtube_oembed_title(embed_url: str, timeout_sec: int = IFRAME_TITLE_F
             timeout=timeout_sec,
             headers={"User-Agent": "Mozilla/5.0"},
         )
-        resp.raise_for_status()
+    except Exception as ex:
+        return "", f"exception={ex.__class__.__name__}"
+
+    if resp.status_code != 200:
+        return "", f"status={resp.status_code}"
+
+    try:
         data = resp.json()
-        title = str(data.get("title") or "").strip()
-        return re.sub(r"\s{2,}", " ", title).strip()
-    except Exception:
-        return ""
+    except Exception as ex:
+        return "", f"exception={ex.__class__.__name__}"
+
+    title = re.sub(r"\s{2,}", " ", str(data.get("title") or "").strip()).strip()
+    if not title:
+        return "", "exception=empty_title"
+    return title, ""
 
 
 def _clean_title_seed(text: str) -> str:
@@ -202,7 +211,9 @@ def _format_youtube_iframe_title(base_title: str) -> str:
     if not cleaned:
         cleaned = "動画"
 
-    if "動画" in cleaned:
+    has_sentence_end = bool(re.search(r"[。！？!?]$", cleaned))
+    is_content_keyword = bool(re.search(r"(メッセージ|インタビュー|講演|説明|紹介|ダイジェスト|PV|プロモーション)", cleaned, re.IGNORECASE))
+    if "動画" in cleaned or has_sentence_end or is_content_keyword:
         full = f"{cleaned}{YOUTUBE_SUFFIX}"
     else:
         full = f"{cleaned}の動画{YOUTUBE_SUFFIX}"
@@ -364,11 +375,13 @@ def enrich_iframe_titles(
             return str(soup)
 
         cache = {}  # src -> (base_title, method)
+        yt_cache = {}  # src -> (base_title, method, reason)
         fetched = 0
         updated_count = 0
         skipped_count = 0
         cap_reached_count = 0
         update_logs = []
+        skip_logs = []
 
         for fr in iframes:
             raw_src = (fr.get("src") or "").strip()
@@ -407,15 +420,35 @@ def enrich_iframe_titles(
                 skipped_count += 1
                 continue
 
-            if fetched >= fetch_cap_per_page and src not in cache:
-                cap_reached_count += 1
-                if is_youtube:
-                    base_title = _extract_context_text(fr)
-                    method = "context_text" if base_title else "fallback"
-                    new_title = _format_youtube_iframe_title(base_title or "動画")
+            if is_youtube:
+                method = "cache"
+                reason = ""
+                base_title = ""
+
+                if src in yt_cache:
+                    base_title, method, reason = yt_cache[src]
                 else:
-                    skipped_count += 1
-                    continue
+                    if fetched >= fetch_cap_per_page:
+                        cap_reached_count += 1
+                        method = "oembed_failed"
+                        reason = "status=fetch_cap_reached"
+                    elif not FEATURE_IFRAME_YT_OEMBED:
+                        method = "oembed_failed"
+                        reason = "status=feature_disabled"
+                    else:
+                        base_title, fail_reason = fetch_youtube_oembed_title(src, timeout_sec=fetch_timeout_sec)
+                        fetched += 1
+                        if base_title:
+                            method = "youtube_oembed"
+                        else:
+                            method = "oembed_failed"
+                            reason = fail_reason or "exception=unknown"
+                    yt_cache[src] = (base_title, method, reason)
+
+                if method == "youtube_oembed":
+                    new_title = _format_youtube_iframe_title(base_title)
+                else:
+                    new_title = ""
             else:
                 method = "cache"
                 if src in cache:
@@ -458,6 +491,15 @@ def enrich_iframe_titles(
                     )
             else:
                 skipped_count += 1
+                if is_youtube and method == "oembed_failed" and len(skip_logs) < 5:
+                    skip_logs.append(
+                        {
+                            "src": src,
+                            "old_title": cur_title_raw,
+                            "method": method,
+                            "reason": reason,
+                        }
+                    )
 
         if log:
             print(
@@ -490,6 +532,16 @@ def enrich_iframe_titles(
                     f"t_norm={item['t_norm']!r} "
                     f"new_title={item['new_title']!r} "
                     f"method={item['method']}"
+                )
+            for idx, item in enumerate(skip_logs, start=1):
+                src_short = item["src"]
+                if len(src_short) > 120:
+                    src_short = src_short[:117] + "..."
+                print(
+                    f"    ↳ skip#{idx} src={src_short} "
+                    f"old_title={item['old_title']!r} "
+                    f"method={item['method']} "
+                    f"reason={item['reason']}"
                 )
 
         return str(soup)
