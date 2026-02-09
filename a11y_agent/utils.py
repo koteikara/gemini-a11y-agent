@@ -3,7 +3,7 @@
 # ==============================================================================
 
 import datetime
-from config import JST
+from .config import JST
 
 
 def now_jst() -> str:

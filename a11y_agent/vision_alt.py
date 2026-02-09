@@ -8,7 +8,7 @@ from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
-from config import MODEL_ID
+from .config import MODEL_ID
 
 
 def sanitize_alt(alt: str) -> str:

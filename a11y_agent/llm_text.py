@@ -5,7 +5,7 @@
 import re
 from bs4 import BeautifulSoup
 
-from config import MODEL_ID
+from .config import MODEL_ID
 
 
 def call_llm(client, prompt: str, temperature: float = 0.1):
