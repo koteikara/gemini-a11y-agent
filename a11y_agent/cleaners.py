@@ -9,7 +9,7 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from bs4.element import NavigableString, Tag
 
-from config import (
+from .config import (
     FORBIDDEN_TAGS,
     DROP_ATTRS_BY_TAG,
     IFRAME_ALLOWED_ATTRS,

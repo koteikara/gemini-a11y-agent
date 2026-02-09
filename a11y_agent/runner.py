@@ -11,7 +11,7 @@ from google.colab import userdata
 from google import genai
 from bs4 import BeautifulSoup
 
-from config import (
+from .config import (
     TOOL_VERSION,
     BUILD_ID,
     MODEL_ID,
@@ -33,29 +33,29 @@ from config import (
     SLEEP_BETWEEN_BLOCKS,
     SLEEP_BETWEEN_VISION_CALLS,
 )
-from utils import now_jst, guess_mime_from_url
-from extractor import robust_extract_xpath_first
-from chunker import structural_chunk
-from cleaners import (
+from .utils import now_jst, guess_mime_from_url
+from .extractor import robust_extract_xpath_first
+from .chunker import structural_chunk
+from .cleaners import (
     pre_clean,
     absolutize_paths,
     convert_layout_tables_to_div_preserve_dom,
     chunk_has_data_table_like,
 )
-from trim_common import (
+from .trim_common import (
     drop_common_blocks_by_selectors,
     trim_after_menu_pagetop,
     extract_text_for_block,
     is_end_trim_trigger,
     is_noise_block,
 )
-from llm_text import call_llm, prompt_tables, prompt_text_normalize, needs_text_normalize
-from vision_alt import (
+from .llm_text import call_llm, prompt_tables, prompt_text_normalize, needs_text_normalize
+from .vision_alt import (
     collect_images_for_vision,
     generate_alt_with_vision,
     apply_alt_results,
 )
-from io_sheets import (
+from .io_sheets import (
     authenticate,
     open_sheet_strict,
     read_pending_rows,

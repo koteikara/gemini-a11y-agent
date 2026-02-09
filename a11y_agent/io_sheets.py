@@ -9,8 +9,8 @@ from gspread.exceptions import SpreadsheetNotFound, APIError
 from google.colab import auth, drive
 from google.auth import default
 
-from config import OUTPUT_PARENT_PATH, TOOL_VERSION
-from utils import safe_strip
+from .config import OUTPUT_PARENT_PATH, TOOL_VERSION
+from .utils import safe_strip
 
 
 # ==============================================================================
