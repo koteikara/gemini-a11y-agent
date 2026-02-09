@@ -228,3 +228,51 @@ main()
 
 ```
 ```
+
+---
+
+## ログで「修正範囲」を確認する方法（Build / Feature Flags）
+
+実行ログの冒頭に、必ず次の2行が出ます。
+
+- `[build] BUILD_ID=... TOOL_VERSION=...`
+- `[features] ...`
+
+例:
+
+```text
+[build] BUILD_ID=v22.1 TOOL_VERSION=Ver ...
+[features] iframe_title_enrich youtube_oembed generic_fix iframe_log
+```
+
+### 見方
+
+- `BUILD_ID`: ログ仕様や修正範囲の識別子（運用上、ログ仕様変更ごとに更新）
+- `TOOL_VERSION`: 人間向けのバージョン表示
+- `[features]`: その実行で有効な修正範囲（True の項目のみ列挙）
+
+### ページ単位での確認
+
+各ページ処理の開始時にも、次の形式で有効範囲を出力します。
+
+- `[page-features] iframe_title_enrich=ON youtube_oembed=ON generic_fix=ON iframe_log=ON`
+
+このため、ページログ単体でも「どの修正範囲が有効だったか」を判別できます。
+
+### iframe title 補完ログの見方
+
+`FEATURE_IFRAME_TITLE_LOG=True` の場合、iframe 補完時に次を出力します。
+
+- `[iframe-title] BUILD_ID=... cap=... timeout=... base_url=...`
+- `[iframe-title] enabled: yt_oembed=ON/OFF generic_fix=ON/OFF`
+- 補完サマリ（`iframe_count`, `updated_count`, `skipped_count`, `fetch_count`, `cap_reached_count`）
+- 更新があった iframe の詳細（最大5件）
+
+### 影響範囲を切りたい場合（config.py）
+
+`a11y_agent/config.py` の Feature Flags を `False` に変更します。
+
+- `FEATURE_IFRAME_TITLE_ENRICH`: iframe title 補完自体のON/OFF
+- `FEATURE_IFRAME_YT_OEMBED`: YouTube oEmbed 優先取得のON/OFF
+- `FEATURE_IFRAME_TITLE_GENERIC_FIX`: generic title 判定補強のON/OFF
+- `FEATURE_IFRAME_TITLE_LOG`: iframe 補完詳細ログのON/OFF
