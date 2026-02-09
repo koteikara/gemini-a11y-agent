@@ -187,15 +187,22 @@ def process_page(row: dict, client, vision_cache: dict) -> dict:
 
         # Step 4a: ブロック段階の終端カット
         if ENABLE_BLOCK_LEVEL_END_TRIM and is_end_trim_trigger(raw_text):
-            page_trim_applied = True
-            page_trim_reason = f"end_trim_trigger(block={b})"
-            dropped = len(chunks) - b + 1
-            page_dropped_blocks += dropped
+            # 先頭ブロックで終端トリムが発火すると本文ゼロ化しやすいため、
+            # 本文ブロックを1件以上保持している場合のみトリムを有効化する。
+            if final_blocks:
+                page_trim_applied = True
+                page_trim_reason = f"end_trim_trigger(block={b})"
+                dropped = len(chunks) - b + 1
+                page_dropped_blocks += dropped
+                print(
+                    f"  ✂️ end-trim triggered at block {b}:"
+                    f" reason={page_trim_reason} dropped_blocks={dropped}"
+                )
+                break
             print(
-                f"  ✂️ end-trim triggered at block {b}:"
-                f" reason={page_trim_reason} dropped_blocks={dropped}"
+                f"  ⚠️ end-trim marker ignored at block {b}:"
+                " no accepted content block yet"
             )
-            break
 
         # Step 4b: ノイズブロック判定
         if is_noise_block(raw_text):
