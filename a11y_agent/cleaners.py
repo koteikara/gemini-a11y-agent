@@ -51,7 +51,7 @@ FILEINFO_PATTERNS = [
 
 # --- iframe title補完用 ---
 URLISH_TITLE_PAT = re.compile(r"^(https?://|/).+", re.IGNORECASE)
-YOUTUBE_EMBED_PAT = re.compile(r"^https?://(?:www\.)?youtube\.com/embed/([A-Za-z0-9_-]{6,})", re.IGNORECASE)
+YOUTUBE_EMBED_PAT = re.compile(r"^https?://(?:www\.)?(?:youtube\.com|youtube-nocookie\.com)/embed/([A-Za-z0-9_-]{6,})", re.IGNORECASE)
 GENERIC_IFRAME_TITLES = {"youtube video player", "youtube", "video player", "player"}
 
 # --- UI的テキストパターン（table判定用） ---
@@ -162,17 +162,19 @@ def fetch_title_from_url(src_url: str, timeout_sec: int = IFRAME_TITLE_FETCH_TIM
 def fetch_youtube_oembed_title(embed_url: str, timeout_sec: int = IFRAME_TITLE_FETCH_TIMEOUT) -> str:
     """YouTube埋め込みURLのoEmbedから動画タイトルを取得。"""
     try:
-        if not YOUTUBE_EMBED_PAT.match(embed_url):
+        canonical_embed_url = embed_url.split("?", 1)[0]
+        if not YOUTUBE_EMBED_PAT.match(canonical_embed_url):
             return ""
 
         endpoint = "https://www.youtube.com/oembed"
         resp = requests.get(
             endpoint,
-            params={"url": embed_url, "format": "json"},
+            params={"url": canonical_embed_url, "format": "json"},
             timeout=timeout_sec,
             headers={"User-Agent": "Mozilla/5.0"},
         )
-        data = resp.json() if resp.ok else {}
+        resp.raise_for_status()
+        data = resp.json()
         title = str(data.get("title") or "").strip()
         return re.sub(r"\s{2,}", " ", title).strip()
     except Exception:
@@ -301,18 +303,19 @@ def enrich_iframe_titles(
                 continue
 
             src = urljoin(base_url, raw_src) if base_url else raw_src
-            cur_title = (fr.get("title") or "").strip()
+            cur_title = fr.get("title") or ""
+            t_norm = cur_title.strip().lower()
 
             need = False
-            if not cur_title:
+            if not t_norm:
                 need = True
             elif URLISH_TITLE_PAT.match(cur_title):
                 need = True
-            elif cur_title.lower() == raw_src.lower():
+            elif t_norm == raw_src.lower():
                 need = True
-            elif cur_title.lower() == src.lower():
+            elif t_norm == src.lower():
                 need = True
-            elif cur_title.lower() in GENERIC_IFRAME_TITLES:
+            elif t_norm in GENERIC_IFRAME_TITLES:
                 need = True
 
             if not need:
@@ -327,7 +330,8 @@ def enrich_iframe_titles(
                 new_title = fetch_youtube_oembed_title(src, timeout_sec=fetch_timeout_sec)
                 if not new_title:
                     new_title = fetch_title_from_url(src, timeout_sec=fetch_timeout_sec)
-                cache[src] = new_title
+                if new_title:
+                    cache[src] = new_title
                 fetched += 1
 
             if new_title:
