@@ -13,11 +13,16 @@ from bs4 import BeautifulSoup
 
 from config import (
     TOOL_VERSION,
+    BUILD_ID,
     MODEL_ID,
     MASTER_SHEET_ID,
     MAX_CHUNK_CHARS,
     CONVERT_LAYOUT_TABLES_TO_DIV,
     IFRAME_TITLE_FETCH_CAP_PER_PAGE,
+    FEATURE_IFRAME_TITLE_ENRICH,
+    FEATURE_IFRAME_YT_OEMBED,
+    FEATURE_IFRAME_TITLE_GENERIC_FIX,
+    FEATURE_IFRAME_TITLE_LOG,
     VISION_ON_TARGET_ALL_IMGS,
     VISION_CAP_PER_PAGE,
     TRIM_AFTER_MENU_PAGETOP,
@@ -63,6 +68,15 @@ from io_sheets import (
 # ログ関数
 # ==============================================================================
 
+def _format_iframe_feature_summary() -> str:
+    """iframe関連機能の有効状態を文字列化。"""
+    return (
+        "iframe_title_enrich={} ".format('ON' if FEATURE_IFRAME_TITLE_ENRICH else 'OFF')
+        + "youtube_oembed={} ".format('ON' if FEATURE_IFRAME_YT_OEMBED else 'OFF')
+        + "generic_fix={} ".format('ON' if FEATURE_IFRAME_TITLE_GENERIC_FIX else 'OFF')
+        + "iframe_log={}".format('ON' if FEATURE_IFRAME_TITLE_LOG else 'OFF')
+    )
+
 def print_block_log(block_no, total_tokens, step_tokens, step_calls, extra_msg=""):
     """ブロック処理のログ出力"""
     parts = []
@@ -78,6 +92,18 @@ def print_block_log(block_no, total_tokens, step_tokens, step_calls, extra_msg="
 def print_startup_info():
     """起動時の設定情報ログ"""
     print(f"🚀 {TOOL_VERSION} 起動")
+    enabled_features = [
+        name
+        for name, enabled in [
+            ("iframe_title_enrich", FEATURE_IFRAME_TITLE_ENRICH),
+            ("youtube_oembed", FEATURE_IFRAME_YT_OEMBED),
+            ("generic_fix", FEATURE_IFRAME_TITLE_GENERIC_FIX),
+            ("iframe_log", FEATURE_IFRAME_TITLE_LOG),
+        ]
+        if enabled
+    ]
+    print(f"[build] BUILD_ID={BUILD_ID} TOOL_VERSION={TOOL_VERSION}")
+    print("[features] " + (" ".join(enabled_features) if enabled_features else "none"))
     print(
         "ℹ️ シート: A=自治体 B=URL C=ファイル名 D=XPath E=ステータス"
         " F=開始 G=完了 H=総tokens I=円 J=Ver K=Vision L=VisionTokens M=VisionCalls"
@@ -153,6 +179,7 @@ def process_page(row: dict, client, vision_cache: dict) -> dict:
     page_trim_reason = None
 
     start = now_jst()
+    print(f"  [page-features] {_format_iframe_feature_summary()}")
 
     # ------------------------------------------------------------------
     # Step 2: 抽出

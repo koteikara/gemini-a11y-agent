@@ -17,6 +17,11 @@ from config import (
     IFRAME_TITLE_FETCH_CAP_PER_PAGE,
     IFRAME_TITLE_FETCH_TIMEOUT,
     CONVERT_LAYOUT_TABLES_TO_DIV,
+    BUILD_ID,
+    FEATURE_IFRAME_TITLE_ENRICH,
+    FEATURE_IFRAME_YT_OEMBED,
+    FEATURE_IFRAME_TITLE_GENERIC_FIX,
+    FEATURE_IFRAME_TITLE_LOG,
 )
 
 # ==============================================================================
@@ -286,6 +291,7 @@ def enrich_iframe_titles(
     base_url: str = "",
     fetch_cap_per_page: int = IFRAME_TITLE_FETCH_CAP_PER_PAGE,
     fetch_timeout_sec: int = IFRAME_TITLE_FETCH_TIMEOUT,
+    log: bool = False,
 ) -> str:
     """iframe titleをsrc先情報で補完（YouTubeはoEmbed優先）。"""
     try:
@@ -296,15 +302,21 @@ def enrich_iframe_titles(
 
         cache = {}
         fetched = 0
+        updated_count = 0
+        skipped_count = 0
+        cap_reached_count = 0
+        update_logs = []
 
         for fr in iframes:
             raw_src = (fr.get("src") or "").strip()
             if not raw_src:
+                skipped_count += 1
                 continue
 
             src = urljoin(base_url, raw_src) if base_url else raw_src
-            cur_title = (fr.get("title") or "").strip()
-            t_norm = cur_title.lower()
+            cur_title_raw = fr.get("title") or ""
+            cur_title = cur_title_raw.strip()
+            t_norm = re.sub(r"\s+", " ", cur_title).strip().lower()
 
             need = False
             if not t_norm:
@@ -315,27 +327,82 @@ def enrich_iframe_titles(
                 need = True
             elif t_norm == src.lower():
                 need = True
-            elif cur_title.lower() in GENERIC_IFRAME_TITLES:
+            elif FEATURE_IFRAME_TITLE_GENERIC_FIX and t_norm in GENERIC_IFRAME_TITLES:
                 need = True
 
             if not need:
+                skipped_count += 1
                 continue
 
             if fetched >= fetch_cap_per_page and src not in cache:
+                skipped_count += 1
+                cap_reached_count += 1
                 continue
 
+            method = "cache"
             if src in cache:
                 new_title = cache[src]
             else:
-                new_title = fetch_youtube_oembed_title(src, timeout_sec=fetch_timeout_sec)
+                method = "oembed"
+                if FEATURE_IFRAME_YT_OEMBED:
+                    new_title = fetch_youtube_oembed_title(src, timeout_sec=fetch_timeout_sec)
+                else:
+                    new_title = ""
                 if not new_title:
+                    method = "html_title"
                     new_title = fetch_title_from_url(src, timeout_sec=fetch_timeout_sec)
                 if new_title:
                     cache[src] = new_title
                 fetched += 1
 
-            if new_title:
+            if new_title and new_title != cur_title_raw:
                 fr["title"] = new_title
+                updated_count += 1
+                if len(update_logs) < 5:
+                    update_logs.append(
+                        {
+                            "src": src,
+                            "old_title": cur_title_raw,
+                            "t_norm": t_norm,
+                            "new_title": new_title,
+                            "method": method,
+                        }
+                    )
+            else:
+                skipped_count += 1
+
+        if log:
+            print(
+                "  [iframe-title] "
+                f"BUILD_ID={BUILD_ID} "
+                f"cap={fetch_cap_per_page} "
+                f"timeout={fetch_timeout_sec} "
+                f"base_url={base_url or '-'}"
+            )
+            print(
+                "  [iframe-title] enabled: "
+                f"yt_oembed={'ON' if FEATURE_IFRAME_YT_OEMBED else 'OFF'} "
+                f"generic_fix={'ON' if FEATURE_IFRAME_TITLE_GENERIC_FIX else 'OFF'}"
+            )
+            print(
+                "  ℹ️ iframe title enrich: "
+                f"iframe_count={len(iframes)} "
+                f"updated_count={updated_count} "
+                f"skipped_count={skipped_count} "
+                f"fetch_count={fetched} "
+                f"cap_reached_count={cap_reached_count}"
+            )
+            for idx, item in enumerate(update_logs, start=1):
+                src_short = item["src"]
+                if len(src_short) > 120:
+                    src_short = src_short[:117] + "..."
+                print(
+                    f"    ↳ update#{idx} src={src_short} "
+                    f"old_title={item['old_title']!r} "
+                    f"t_norm={item['t_norm']!r} "
+                    f"new_title={item['new_title']!r} "
+                    f"method={item['method']}"
+                )
 
         return str(soup)
     except Exception:
@@ -477,7 +544,12 @@ def pre_clean(
     h = remove_deprecated_and_nonstandard_attrs(h)
     h = strip_px_sizes_from_style_attr(h)
     h = remove_fileinfo_anywhere_text(h)
-    h = enrich_iframe_titles(h, base_url=base_url)
+    if FEATURE_IFRAME_TITLE_ENRICH:
+        h = enrich_iframe_titles(
+            h,
+            base_url=base_url,
+            log=FEATURE_IFRAME_TITLE_LOG,
+        )
 
     if do_layout_table_convert and CONVERT_LAYOUT_TABLES_TO_DIV:
         try:

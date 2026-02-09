@@ -7,6 +7,7 @@ import re
 
 # === ツール情報 ===
 TOOL_VERSION = "Ver 35.0-minpatch+AltFixPatch (patched v22 end-trim + cleanup-fixes)"
+BUILD_ID = "v22.1"
 MODEL_ID = "gemini-2.0-flash"
 
 # === シート・Drive ===
@@ -27,6 +28,12 @@ MAX_CHUNK_CHARS = 8000
 # === Vision ===
 VISION_ON_TARGET_ALL_IMGS = True
 VISION_CAP_PER_PAGE = 50
+
+# === Feature Flags（修正範囲） ===
+FEATURE_IFRAME_TITLE_ENRICH = True
+FEATURE_IFRAME_YT_OEMBED = True
+FEATURE_IFRAME_TITLE_GENERIC_FIX = True
+FEATURE_IFRAME_TITLE_LOG = True
 
 # === iframe ===
 IFRAME_TITLE_FETCH_CAP_PER_PAGE = 10
