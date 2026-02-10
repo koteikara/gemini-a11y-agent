@@ -3,6 +3,7 @@
 # ==============================================================================
 
 import re
+import logging
 import requests
 from urllib.parse import quote, urljoin
 
@@ -88,9 +89,22 @@ DIV_FORBIDDEN_ATTRS_FROM_TABLE = {
 
 # --- 本文混入の内部識別ラベル削除 ---
 FORBIDDEN_INTERNAL_TEXT_PATTERNS = [
-    r"\bBASIC_PARTS_SET\b",
-    r"\bINDEX\s+PAGE\s+ITEM\b",
+    "BASIC_PARTS_SET",
+    "INDEX PAGE ITEM",
 ]
+
+def _build_internal_token_pattern(token: str):
+    body = re.escape(token).replace(r"\ ", r"\s+")
+    return re.compile(rf"(?<![A-Za-z0-9_]){body}(?![A-Za-z0-9_])", re.IGNORECASE)
+
+
+FORBIDDEN_INTERNAL_TEXT_TOKEN_PATTERNS = [
+    _build_internal_token_pattern(token)
+    for token in FORBIDDEN_INTERNAL_TEXT_PATTERNS
+]
+
+INTERNAL_MARKER_ROLLBACK_MIN_REMOVED_CHARS = 20
+INTERNAL_MARKER_ROLLBACK_MIN_REDUCTION_RATIO = 0.6
 
 # --- Protect explanation text before data tables ---
 PROTECT_TABLE_INTRO_KEYWORDS = [
@@ -100,6 +114,8 @@ PROTECT_TABLE_INTRO_KEYWORDS = [
 ]
 PROTECT_TABLE_INTRO_MIN_TEXT_LEN = 30
 PROTECT_TABLE_INTRO_HINT_PAT = re.compile(r"(?:※|注記|注意|ください|しましょう|受付|診療時間)")
+
+logger = logging.getLogger(__name__)
 
 
 # ==============================================================================
@@ -122,10 +138,45 @@ def _is_file_like_link(a_tag) -> bool:
 
 def _drop_internal_markers(text: str) -> str:
     """本文テキストから内部識別ラベルを除去して空白を正規化。"""
-    new_text = str(text or "")
-    for pat in FORBIDDEN_INTERNAL_TEXT_PATTERNS:
-        new_text = re.sub(pat, " ", new_text, flags=re.IGNORECASE)
-    return re.sub(r"\s+", " ", new_text).strip()
+    original_text = str(text or "")
+    new_text = original_text
+    for pat in FORBIDDEN_INTERNAL_TEXT_TOKEN_PATTERNS:
+        new_text = pat.sub(" ", new_text)
+    new_text = re.sub(r"\s+", " ", new_text).strip()
+
+    removed_chars = len(original_text) - len(new_text)
+    reduction_ratio = (removed_chars / len(original_text)) if original_text else 0.0
+    if (
+        removed_chars >= INTERNAL_MARKER_ROLLBACK_MIN_REMOVED_CHARS
+        and reduction_ratio >= INTERNAL_MARKER_ROLLBACK_MIN_REDUCTION_RATIO
+    ):
+        return original_text
+    return new_text
+
+
+def _is_marker_like_text_node(text: str) -> bool:
+    """内部マーカ混入ノードらしさを判定（日本語文の巻き込み防止）。"""
+    t = str(text or "")
+    if not t.strip():
+        return False
+    if not any(pat.search(t) for pat in FORBIDDEN_INTERNAL_TEXT_TOKEN_PATTERNS):
+        return False
+
+    jp_char_count = len(re.findall(r"[\u3040-\u30FF\u3400-\u9FFF]", t))
+    ascii_word_count = len(re.findall(r"[A-Za-z0-9_]+", t))
+
+    # 日本語文の本文らしい塊は対象外にする（短い混入行は許容）。
+    if jp_char_count >= 20 and ascii_word_count <= 10 and len(t) >= 50:
+        return False
+
+    return True
+
+
+def _shorten_for_log(text: str, max_len: int = 80) -> str:
+    t = str(text or "").replace("\n", "\\n")
+    if len(t) <= max_len:
+        return t
+    return t[:max_len] + "..."
 
 
 def _is_layout_table(table_tag: Tag) -> bool:
@@ -612,15 +663,32 @@ def remove_forbidden_internal_text_anywhere(html_content: str) -> str:
     """本文に混入した内部識別ラベルをテキストノードから除去。"""
     try:
         soup = BeautifulSoup(html_content, "html.parser")
+        changed_nodes = 0
+        sample_before = ""
+        sample_after = ""
 
         for node in soup.find_all(string=True):
             if not isinstance(node, NavigableString):
                 continue
 
             txt = str(node)
+            if not _is_marker_like_text_node(txt):
+                continue
             new_txt = _drop_internal_markers(txt)
             if new_txt != txt:
+                changed_nodes += 1
+                if not sample_before:
+                    sample_before = _shorten_for_log(txt)
+                    sample_after = _shorten_for_log(new_txt)
                 node.replace_with(new_txt)
+
+        logger.debug("removed_internal_markers: changed_nodes=%d", changed_nodes)
+        if sample_before:
+            logger.debug(
+                "removed_internal_markers_sample: before='%s' after='%s'",
+                sample_before,
+                sample_after,
+            )
 
         return str(soup)
     except Exception:
