@@ -73,6 +73,10 @@ def _is_heading_node(node) -> bool:
     return isinstance(node, Tag) and node.name in {"h2", "h3", "h4"}
 
 
+def _is_h4_node(node) -> bool:
+    return isinstance(node, Tag) and node.name == "h4"
+
+
 def _has_intro_keyword(node) -> bool:
     try:
         text = " ".join((node.get_text(" ", strip=True) if isinstance(node, Tag) else str(node)).split())
@@ -108,25 +112,45 @@ def _intro_priority(node) -> int:
 
 
 def _merge_table_intro_children(children: list) -> list:
-    """データテーブル直前の連続する導入文ブロックを同一要素としてマージ。"""
+    """
+    テーブル前後の導入ブロックを整理する。
+
+    - 最初のdata table直前にある連続テキストは「グローバル導入」として独立保持
+    - ただし table 直前の h4 は日付見出しとして table 側へ付与
+    - 更新行（更新：YYYY年MM月DD日）は導入ブロックから除外
+    """
     merged = []
+    seen_first_data_table = False
     i = 0
     while i < len(children):
         child = children[i]
         if _is_data_table_block(child):
-            j = i - 1
-            intro_start = i
-            while j >= 0 and _is_intro_text_block(children[j]):
-                intro_start = j
-                j -= 1
+            prepend_parts = []
 
-            if intro_start < i and merged and len(merged) >= (i - intro_start):
-                intro_parts = merged[-(i - intro_start):]
-                merged = merged[: -(i - intro_start)]
-                filtered_intro_parts = [x for x in intro_parts if not _is_update_line_only(x)]
-                merged.append("".join(str(x) for x in filtered_intro_parts) + str(child))
-            else:
-                merged.append(child)
+            if merged:
+                j = len(merged) - 1
+                while j >= 0 and _is_intro_text_block(merged[j]):
+                    j -= 1
+                intro_tail_start = j + 1
+                intro_tail = merged[intro_tail_start:]
+
+                if intro_tail:
+                    attach_h4 = _is_h4_node(intro_tail[-1]) and not _is_update_line_only(intro_tail[-1])
+                    if not seen_first_data_table:
+                        global_intro_parts = intro_tail[:-1] if attach_h4 else intro_tail
+                        global_intro_parts = [x for x in global_intro_parts if not _is_update_line_only(x)]
+
+                        merged = merged[:intro_tail_start]
+                        if global_intro_parts:
+                            merged.append("".join(str(x) for x in global_intro_parts))
+                        if attach_h4:
+                            prepend_parts.append(intro_tail[-1])
+                    elif attach_h4:
+                        merged = merged[:-1]
+                        prepend_parts.append(intro_tail[-1])
+
+            merged.append("".join(str(x) for x in prepend_parts) + str(child))
+            seen_first_data_table = True
             i += 1
             continue
 

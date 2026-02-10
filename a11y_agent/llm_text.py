@@ -40,11 +40,13 @@ def prompt_tables(html: str) -> str:
     """データtableのアクセシビリティ修正プロンプトを生成"""
     return f"""
 あなたは自治体サイトのHTMLアクセシビリティ修正担当です。
-表（table）のアクセシビリティ修正のみを行ってください。
-- caption 必須（無い場合は文脈から端的に作る）
-- thead / th / scope(col/row) を適切に付与
+次の厳格ルールで修正してください。
+- 入力HTMLから要素を削除してはいけない
+- table要素以外（h/p/div等）は1文字たりとも変更してはいけない
+- 修正対象は table要素のアクセシビリティ関連のみ（caption/thead/th/scope など）
 - セル文言（テキスト）を変えない
 - タグ名・属性名を創作しない（既存HTMLの範囲で修正）
+- 入力HTML全体を、同じ順序・同じ要素構成で返す（tableだけ返すのは禁止）
 修正後のHTMLのみを出力（Markdown不可）。
 
 {html}
