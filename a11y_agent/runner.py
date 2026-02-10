@@ -48,6 +48,7 @@ from .trim_common import (
     extract_text_for_block,
     is_end_trim_trigger,
     is_noise_block,
+    should_apply_end_trim,
 )
 from .llm_text import call_llm, prompt_tables, prompt_text_normalize, needs_text_normalize
 from .vision_alt import (
@@ -214,9 +215,20 @@ def process_page(row: dict, client, vision_cache: dict) -> dict:
 
         # Step 4a: ブロック段階の終端カット
         if ENABLE_BLOCK_LEVEL_END_TRIM and is_end_trim_trigger(raw_text):
-            # 先頭ブロックで終端トリムが発火すると本文ゼロ化しやすいため、
-            # 本文ブロックを1件以上保持している場合のみトリムを有効化する。
-            if final_blocks:
+            should_trim, intro_detected, table_ahead = should_apply_end_trim(
+                block_text=raw_text,
+                current_blocks=[raw_ch],
+                upcoming_blocks=chunks[b:b + 3],
+                has_accepted_content=bool(final_blocks),
+            )
+            if intro_detected and table_ahead:
+                print(
+                    f"  ⚠️ end-trim suppressed: protect_table_intro "
+                    f"table_ahead={'Y' if table_ahead else 'N'} "
+                    f"intro_detected={'Y' if intro_detected else 'N'} "
+                    f"block={b}"
+                )
+            elif should_trim:
                 page_trim_applied = True
                 page_trim_reason = f"end_trim_trigger(block={b})"
                 dropped = len(chunks) - b + 1
@@ -226,10 +238,11 @@ def process_page(row: dict, client, vision_cache: dict) -> dict:
                     f" reason={page_trim_reason} dropped_blocks={dropped}"
                 )
                 break
-            print(
-                f"  ⚠️ end-trim marker ignored at block {b}:"
-                " no accepted content block yet"
-            )
+            else:
+                print(
+                    f"  ⚠️ end-trim marker ignored at block {b}:"
+                    " no accepted content block yet"
+                )
 
         # Step 4b: ノイズブロック判定
         if is_noise_block(raw_text):
