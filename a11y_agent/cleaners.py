@@ -67,6 +67,12 @@ UIISH_TEXT_PAT = re.compile(
     r"(にメールを送る|メールを送る|クリック|詳細|申し込み|申込み|予約|送信|問合せ|問い合わせ)"
 )
 
+HEADER_TEXT_MIN_LEN = 1
+HEADER_TEXT_MAX_LEN = 30
+HEADER_TEXT_MAX_NUMERICISH_RATIO = 0.6
+HEADER_TEXT_MIN_NONEMPTY_CELLS = 2
+HEADER_UI_TAGS = ["a", "button", "input", "select", "textarea"]
+
 # --- div に残すべきでない table由来属性 ---
 DIV_FORBIDDEN_ATTRS_FROM_TABLE = {
     "scope", "headers", "axis", "abbr", "rowspan", "colspan"
@@ -161,6 +167,177 @@ def _rename_to_div_and_strip_attrs(t: Tag) -> None:
                 del t[a]
     except Exception:
         pass
+
+
+def _cell_text(cell: Tag) -> str:
+    return re.sub(r"\s+", " ", cell.get_text(" ", strip=True)).strip()
+
+
+def _is_numericish_text(text: str) -> bool:
+    t = re.sub(r"\s+", "", str(text or ""))
+    if not t:
+        return False
+    return bool(re.fullmatch(r"[0-9０-９.,/\-+()％%:：]+", t))
+
+
+def _row_total_colspan(row: Tag) -> int:
+    total = 0
+    for c in row.find_all(["td", "th"], recursive=False):
+        try:
+            total += max(1, int(c.get("colspan", 1)))
+        except Exception:
+            total += 1
+    return total
+
+
+def _get_first_data_row(table_tag: Tag):
+    for row in table_tag.find_all("tr"):
+        if row.find_parent("thead") is not None:
+            continue
+        return row
+    return None
+
+
+def _is_simple_header_candidate(table_tag: Tag):
+    first_row = _get_first_data_row(table_tag)
+    if first_row is None:
+        return False, "no_first_data_row", []
+
+    if first_row.find("th") is not None:
+        return False, "already_has_th", []
+
+    rows = table_tag.find_all("tr")
+    if len(rows) < 2:
+        return False, "row_count_lt_2", []
+
+    if first_row.find_all(["td", "th"], recursive=False) == []:
+        return False, "first_row_no_cells", []
+
+    data_rows = [r for r in rows if r.find_parent("thead") is None]
+    if len(data_rows) < 2:
+        return False, "data_rows_lt_2", []
+
+    first_count = _row_total_colspan(first_row)
+    rep_row = None
+    for r in data_rows[1:]:
+        if r.find_all(["td", "th"], recursive=False):
+            rep_row = r
+            break
+    if rep_row is None:
+        return False, "no_representative_row", []
+
+    rep_count = _row_total_colspan(rep_row)
+    if abs(first_count - rep_count) > 1:
+        return False, "col_count_mismatch", []
+
+    first_cells = first_row.find_all("td", recursive=False)
+    nonempty_texts = [_cell_text(c) for c in first_cells if _cell_text(c)]
+    if len(nonempty_texts) < HEADER_TEXT_MIN_NONEMPTY_CELLS:
+        return False, "too_few_nonempty", []
+
+    lengths_ok = all(
+        HEADER_TEXT_MIN_LEN <= len(t) <= HEADER_TEXT_MAX_LEN
+        for t in nonempty_texts
+    )
+    if not lengths_ok:
+        return False, "text_len_out_of_range", []
+
+    numericish_count = sum(1 for t in nonempty_texts if _is_numericish_text(t))
+    if (numericish_count / max(1, len(nonempty_texts))) > HEADER_TEXT_MAX_NUMERICISH_RATIO:
+        return False, "numericish_ratio_high", []
+
+    ui_only_count = 0
+    for c in first_cells:
+        text = _cell_text(c)
+        if not text:
+            continue
+        if c.find(HEADER_UI_TAGS) is None:
+            continue
+        ui_text = re.sub(r"\s+", "", c.get_text(" ", strip=True))
+        own_text = re.sub(r"\s+", "", text)
+        if own_text and own_text == ui_text:
+            ui_only_count += 1
+    if ui_only_count == len(nonempty_texts):
+        return False, "all_ui_only_cells", []
+
+    preview = nonempty_texts[:8]
+    return True, "fixable", preview
+
+
+def fix_data_table_header_row(html_content: str, log: bool = True):
+    """単純表の先頭<td>行を<th scope='col'>へ補正。"""
+    try:
+        soup = BeautifulSoup(html_content, "html.parser")
+        tables = soup.find_all("table")
+        checked = 0
+        fixed = 0
+        reason_counts = {}
+        fix_examples = []
+
+        for table in tables:
+            if _is_layout_table(table):
+                reason_counts["layout_table"] = reason_counts.get("layout_table", 0) + 1
+                continue
+
+            checked += 1
+            ok, reason, preview = _is_simple_header_candidate(table)
+            if not ok:
+                reason_counts[reason] = reason_counts.get(reason, 0) + 1
+                continue
+
+            first_row = _get_first_data_row(table)
+            if first_row is None:
+                reason_counts["no_first_data_row"] = reason_counts.get("no_first_data_row", 0) + 1
+                continue
+
+            first_cells = first_row.find_all("td", recursive=False)
+            for cell in first_cells:
+                cell.name = "th"
+                if not cell.get("scope"):
+                    cell["scope"] = "col"
+
+            if table.find("thead") is None:
+                parent = first_row.parent
+                if isinstance(parent, Tag) and parent.name == "tbody":
+                    thead = soup.new_tag("thead")
+                    first_row.extract()
+                    thead.append(first_row)
+                    parent.insert_before(thead)
+
+            fixed += 1
+            if len(fix_examples) < 3:
+                fix_examples.append({
+                    "cols": len(first_cells),
+                    "header": preview,
+                })
+
+        skipped = checked - fixed
+        meta = {
+            "table_header_checked": checked,
+            "table_header_fixed": fixed,
+            "table_header_skipped": skipped,
+            "table_header_reason_counts": reason_counts,
+        }
+
+        if log:
+            print(
+                "  ℹ️ table_header_fix: "
+                f"tables_checked={checked} fixed={fixed} skipped={skipped} "
+                f"reason_counts={reason_counts}"
+            )
+            for idx, ex in enumerate(fix_examples, start=1):
+                print(
+                    f"    ↳ fix#{idx} cols={ex['cols']} header={ex['header']}"
+                )
+
+        return str(soup), meta
+    except Exception:
+        return html_content, {
+            "table_header_checked": 0,
+            "table_header_fixed": 0,
+            "table_header_skipped": 0,
+            "table_header_reason_counts": {"exception": 1},
+        }
 
 
 def fetch_title_from_url(src_url: str, timeout_sec: int = IFRAME_TITLE_FETCH_TIMEOUT) -> str:
@@ -687,6 +864,7 @@ def pre_clean(
         5. remove_forbidden_internal_text_anywhere
         6. enrich_iframe_titles
         7. convert_layout_tables_to_div（フラグ依存）
+        8. fix_data_table_header_row
 
     Returns:
         (cleaned_html, meta_dict)
@@ -695,6 +873,10 @@ def pre_clean(
         "tables_before": 0,
         "tables_after": 0,
         "layout_converted": 0,
+        "table_header_checked": 0,
+        "table_header_fixed": 0,
+        "table_header_skipped": 0,
+        "table_header_reason_counts": {},
     }
 
     h = html
@@ -723,5 +905,8 @@ def pre_clean(
             h = h2
             meta["tables_after"] = ta
             meta["layout_converted"] = conv
+
+    h, header_meta = fix_data_table_header_row(h, log=True)
+    meta.update(header_meta)
 
     return h, meta
