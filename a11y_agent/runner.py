@@ -62,6 +62,10 @@ from .vision_alt import (
     generate_alt_with_vision,
     apply_alt_results,
 )
+from .table_response_validator import (
+    parse_single_table_response,
+    format_table_response_detail,
+)
 from .io_sheets import (
     authenticate,
     open_sheet_strict,
@@ -126,26 +130,6 @@ def _table_identity(table_tag: Tag, table_idx: int) -> str:
     except Exception:
         pass
     return f"dom_index={table_idx}"
-
-
-def _parse_single_table_response(resp_html: str):
-    """LLM応答がtable単体として妥当ならTagを返し、妥当でなければNone。"""
-    try:
-        soup = BeautifulSoup(resp_html, "html.parser")
-        tables = soup.find_all("table")
-        if len(tables) != 1:
-            return None
-
-        # table以外の要素混入（例: div/p 付き）や可視テキスト混入は不許可
-        non_table_tag = soup.find(lambda t: t.name not in {"html", "body", "table"})
-        if non_table_tag is not None:
-            return None
-        if soup.get_text(" ", strip=True):
-            return None
-
-        return tables[0]
-    except Exception:
-        return None
 
 
 def print_startup_info():
@@ -348,11 +332,21 @@ def process_page(row: dict, client, vision_cache: dict) -> dict:
                         )
                         continue
 
-                    new_table = _parse_single_table_response(out)
+                    table_outer_html, detail = parse_single_table_response(out)
+                    if table_outer_html is None:
+                        print(
+                            f"    ⚠️ LLM(tables) fallback keep-original:"
+                            f" block={b} table={table_key} reason=invalid_table_response"
+                            f" detail={format_table_response_detail(detail)}"
+                        )
+                        continue
+
+                    new_table = BeautifulSoup(table_outer_html, "html.parser").find("table")
                     if new_table is None:
                         print(
                             f"    ⚠️ LLM(tables) fallback keep-original:"
                             f" block={b} table={table_key} reason=invalid_table_response"
+                            f" detail=table_parse_failed_after_validation"
                         )
                         continue
 
