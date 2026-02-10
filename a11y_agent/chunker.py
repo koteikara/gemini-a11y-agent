@@ -3,7 +3,90 @@
 # ==============================================================================
 
 from bs4 import BeautifulSoup
-from bs4.element import Tag
+from bs4.element import NavigableString, Tag
+
+from .cleaners import chunk_has_data_table_like
+
+
+TEXT_LIKE_TAGS = {
+    "p",
+    "ul",
+    "ol",
+    "li",
+    "div",
+    "section",
+    "article",
+    "span",
+    "dl",
+    "dt",
+    "dd",
+    "blockquote",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+}
+
+
+def _is_data_table_block(node) -> bool:
+    """ノードがデータテーブルを含むか（既存判定を流用）。"""
+    try:
+        if not isinstance(node, Tag):
+            return False
+        if node.name == "table":
+            return chunk_has_data_table_like(str(node))
+        if node.find("table") is None:
+            return False
+        return chunk_has_data_table_like(str(node))
+    except Exception:
+        return False
+
+
+def _is_intro_text_block(node) -> bool:
+    """テーブル導入文候補になりうるテキスト系ブロックか判定。"""
+    try:
+        if isinstance(node, NavigableString):
+            return bool(str(node).strip())
+        if not isinstance(node, Tag):
+            return False
+        if node.name in {"script", "style", "noscript", "table"}:
+            return False
+        if node.find("table") is not None:
+            return False
+        if node.name in TEXT_LIKE_TAGS:
+            return bool(node.get_text(" ", strip=True))
+        return bool(node.get_text(" ", strip=True))
+    except Exception:
+        return False
+
+
+def _merge_table_intro_children(children: list) -> list:
+    """データテーブル直前の連続する導入文ブロックを同一要素としてマージ。"""
+    merged = []
+    i = 0
+    while i < len(children):
+        child = children[i]
+        if _is_data_table_block(child):
+            j = i - 1
+            intro_start = i
+            while j >= 0 and _is_intro_text_block(children[j]):
+                intro_start = j
+                j -= 1
+
+            if intro_start < i and merged and len(merged) >= (i - intro_start):
+                intro_parts = merged[-(i - intro_start):]
+                merged = merged[: -(i - intro_start)]
+                merged.append("".join(str(x) for x in intro_parts) + str(child))
+            else:
+                merged.append(child)
+            i += 1
+            continue
+
+        merged.append(child)
+        i += 1
+    return merged
 
 
 def _split_children_to_chunks(node: Tag, limit: int) -> list:
@@ -66,6 +149,7 @@ def structural_chunk(html: str, limit: int) -> list:
         body = soup.find("body") or soup
 
         direct_children = [c for c in body.contents if str(c).strip()]
+        direct_children = _merge_table_intro_children(direct_children)
         if not direct_children:
             return [str(body)]
 
@@ -87,6 +171,12 @@ def structural_chunk(html: str, limit: int) -> list:
                     chunks.append(buf)
                     buf = ""
                 chunks.extend(_split_children_to_chunks(c, limit))
+                continue
+            if len(h) > limit and not isinstance(c, Tag):
+                if buf.strip():
+                    chunks.append(buf)
+                    buf = ""
+                chunks.extend([h[i : i + limit] for i in range(0, len(h), limit)])
                 continue
 
             if len(buf) + len(h) > limit and buf:
