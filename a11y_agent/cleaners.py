@@ -6,6 +6,7 @@ import re
 import logging
 import requests
 from urllib.parse import quote, urljoin
+from lxml import html as lxml_html
 
 from bs4 import BeautifulSoup
 from bs4.element import NavigableString, Tag
@@ -81,6 +82,19 @@ ROW_HEADER_HINT_PAT = re.compile(
 ROW_HEADER_PHONE_PAT = re.compile(r"^(?:\+?\d[\d\-()\s]{7,}|\d{2,4}-\d{2,4}-\d{3,4})$")
 ROW_HEADER_MAX_LEN = 10
 ROW_HEADER_REPEAT_RATIO = 0.25
+
+TABLE_HEADER_DICT_WORDS = [
+    "診療科", "医療機関名", "電話", "TEL", "所在地", "住所", "時間", "受付",
+    "区分", "内容", "対象", "備考", "特定健診", "診療", "休診", "曜日",
+]
+TABLE_HEADER_WORD_PAT = re.compile("|".join(re.escape(w) for w in TABLE_HEADER_DICT_WORDS), re.IGNORECASE)
+TABLE_PHONE_PAT = re.compile(r"0\d{1,4}-\d{1,4}-\d{3,4}")
+TABLE_URL_PAT = re.compile(r"https?://", re.IGNORECASE)
+
+TABLE_ORIENT_COL_MIN = 2.5
+TABLE_ORIENT_ROW_MIN = 2.5
+TABLE_ORIENT_DELTA_MIN = 1.0
+TABLE_ORIENT_MAX_BLANK_RATIO = 0.5
 
 # --- div に残すべきでない table由来属性 ---
 DIV_FORBIDDEN_ATTRS_FROM_TABLE = {
@@ -273,6 +287,210 @@ def _row_total_colspan(row: Tag) -> int:
     return total
 
 
+def _normalize_lxml_cell_text(text: str) -> str:
+    return re.sub(r"[\s\u00A0]+", "", str(text or "")).strip()
+
+
+def _digit_ratio(text: str) -> float:
+    t = str(text or "")
+    if not t:
+        return 0.0
+    digit_count = sum(ch.isdigit() for ch in t)
+    return digit_count / len(t)
+
+
+def _header_like_score(text: str):
+    t_norm = _normalize_lxml_cell_text(text)
+    if not t_norm:
+        return 0.0, False, True
+
+    score = 0.0
+    dict_hit = bool(TABLE_HEADER_WORD_PAT.search(t_norm))
+    digit_ratio = _digit_ratio(t_norm)
+
+    if len(t_norm) <= 10:
+        score += 1.0
+    if digit_ratio < 0.2:
+        score += 1.0
+    if dict_hit:
+        score += 2.0
+    if TABLE_PHONE_PAT.search(t_norm):
+        score -= 1.0
+    if TABLE_URL_PAT.search(t_norm):
+        score -= 1.0
+
+    return max(0.0, score), dict_hit, False
+
+
+def _avg_digit_ratio(values):
+    if not values:
+        return 0.0
+    return sum(_digit_ratio(v) for v in values) / len(values)
+
+
+def _avg_text_len(values):
+    if not values:
+        return 0.0
+    return sum(len(v) for v in values) / len(values)
+
+
+def _score_data_likeness(values):
+    if not values:
+        return 0.0
+    score = 0.0
+    if _avg_digit_ratio(values) >= 0.2:
+        score += 0.5
+    if _avg_text_len(values) > 10:
+        score += 0.5
+    if any(TABLE_PHONE_PAT.search(v) for v in values):
+        score += 0.5
+    if any(("住所" in v) or ("所在地" in v) for v in values):
+        score += 0.5
+    return score
+
+
+def _table_first_axis_orientation_lxml(table_el):
+    rows = table_el.xpath("./tr | ./tbody/tr")
+    if len(rows) < 2:
+        return "none", "row_count_lt_2", {}
+
+    grid = []
+    for row in rows:
+        cells = row.xpath("./th | ./td")
+        if not cells:
+            continue
+        grid.append(cells)
+    if len(grid) < 2:
+        return "none", "effective_row_count_lt_2", {}
+
+    min_cols = min(len(r) for r in grid)
+    if min_cols < 2:
+        return "none", "col_count_lt_2", {}
+
+    if any(c.tag.lower() != "td" for c in grid[0][:min_cols]):
+        return "none", "first_row_has_th", {}
+    if any(r[0].tag.lower() != "td" for r in grid):
+        return "none", "first_col_has_th", {}
+
+    all_texts = []
+    blank_count = 0
+    for row_cells in grid:
+        for cell in row_cells[:min_cols]:
+            txt = "".join(cell.itertext())
+            all_texts.append(txt)
+            if not _normalize_lxml_cell_text(txt):
+                blank_count += 1
+    blank_ratio = blank_count / len(all_texts) if all_texts else 0.0
+    if blank_ratio > TABLE_ORIENT_MAX_BLANK_RATIO:
+        return "none", "blank_ratio_high", {
+            "rows": len(grid),
+            "cols": min_cols,
+            "blank_ratio": blank_ratio,
+        }
+
+    row1_texts = ["".join(c.itertext()) for c in grid[0][:min_cols]]
+    col1_texts = ["".join(r[0].itertext()) for r in grid]
+    row1_scores = [_header_like_score(t) for t in row1_texts]
+    col1_scores = [_header_like_score(t) for t in col1_texts]
+
+    col_score = sum(s for s, _, _ in row1_scores) / max(1, len(row1_scores))
+    row_score = sum(s for s, _, _ in col1_scores) / max(1, len(col1_scores))
+
+    row2_texts = ["".join(c.itertext()) for c in grid[1][:min_cols]]
+    col2_texts = ["".join(r[1].itertext()) for r in grid]
+    col_score += _score_data_likeness(row2_texts)
+    row_score += _score_data_likeness(col2_texts)
+
+    delta = col_score - row_score
+    if col_score >= TABLE_ORIENT_COL_MIN and delta >= TABLE_ORIENT_DELTA_MIN:
+        orient = "col"
+    elif row_score >= TABLE_ORIENT_ROW_MIN and delta <= -TABLE_ORIENT_DELTA_MIN:
+        orient = "row"
+    else:
+        orient = "none"
+
+    info = {
+        "rows": len(grid),
+        "cols": min_cols,
+        "col_score": round(col_score, 3),
+        "row_score": round(row_score, 3),
+        "delta": round(delta, 3),
+        "dict_hits_row1": sum(1 for _, hit, _ in row1_scores if hit),
+        "dict_hits_col1": sum(1 for _, hit, _ in col1_scores if hit),
+    }
+    return orient, "classified", info
+
+
+def _promote_lxml_cell_to_th(cell, scope_value: str):
+    if cell.tag.lower() == "th":
+        cell.set("scope", scope_value)
+        return
+    new_cell = lxml_html.Element("th")
+    for attr, value in cell.attrib.items():
+        new_cell.set(attr, value)
+    new_cell.set("scope", scope_value)
+    new_cell.text = cell.text
+    for child in list(cell):
+        cell.remove(child)
+        new_cell.append(child)
+    new_cell.tail = cell.tail
+    cell.getparent().replace(cell, new_cell)
+
+
+def _fix_table_header_orientation_lxml(html_content: str, log: bool = True):
+    wrapped_html = f"<div>{html_content}</div>"
+    root = lxml_html.fromstring(wrapped_html)
+    converted_col = 0
+    converted_row = 0
+
+    for table in root.xpath(".//table"):
+        rows = table.xpath("./tr | ./tbody/tr")
+        if table.xpath("./thead"):
+            if log:
+                print("[table-header-orient] orient=skip reason=thead_exists")
+            continue
+        if len(rows) < 2:
+            if log:
+                print("[table-header-orient] orient=skip reason=row_count_lt_2")
+            continue
+        if _is_layout_table(BeautifulSoup(lxml_html.tostring(table, encoding="unicode"), "html.parser").find("table")):
+            if log:
+                print("[table-header-orient] orient=skip reason=layout_suspected")
+            continue
+
+        orient, reason, info = _table_first_axis_orientation_lxml(table)
+        if orient == "col":
+            row1 = rows[0]
+            for cell in row1.xpath("./td | ./th"):
+                _promote_lxml_cell_to_th(cell, "col")
+                converted_col += 1
+        elif orient == "row":
+            for row in rows:
+                cells = row.xpath("./td | ./th")
+                if not cells:
+                    continue
+                _promote_lxml_cell_to_th(cells[0], "row")
+                converted_row += 1
+
+        if log:
+            if info:
+                print(
+                    "[table-header-orient] "
+                    f"orient={orient} rows={info.get('rows', 0)} cols={info.get('cols', 0)} "
+                    f"col={info.get('col_score', 0)} row={info.get('row_score', 0)} "
+                    f"delta={info.get('delta', 0)} "
+                    f"dict_row1={info.get('dict_hits_row1', 0)} dict_col1={info.get('dict_hits_col1', 0)}"
+                )
+            else:
+                print(f"[table-header-orient] orient={orient} reason={reason}")
+
+    fixed_html = "".join(
+        lxml_html.tostring(child, encoding="unicode")
+        for child in root
+    )
+    return fixed_html, {"orient_col_fixed_count": converted_col, "orient_row_fixed_count": converted_row}
+
+
 def _get_first_data_row(table_tag: Tag):
     for row in table_tag.find_all("tr"):
         if row.find_parent("thead") is not None:
@@ -386,7 +604,8 @@ def _is_target_data_table(table: Tag) -> bool:
 def fix_data_table_headers(html_content: str, log: bool = True):
     """data table の thead/tbody/caption 見出し構造を in-place 補正。"""
     try:
-        soup = BeautifulSoup(html_content, "html.parser")
+        oriented_html, orient_meta = _fix_table_header_orientation_lxml(html_content, log=log)
+        soup = BeautifulSoup(oriented_html, "html.parser")
         table_count = 0
         header_fixed_count = 0
         row_header_fixed_count = 0
@@ -419,9 +638,11 @@ def fix_data_table_headers(html_content: str, log: bool = True):
                 thead_first_text = _cell_text(head_first_cell)
 
             first_col_cells = []
-            for row in tbody.find_all("tr", recursive=False):
+            for row_index, row in enumerate(tbody.find_all("tr", recursive=False)):
                 cells = row.find_all(["th", "td"], recursive=False)
                 if not cells:
+                    continue
+                if row_index == 0 and cells[0].name == "th" and (cells[0].get("scope") or "").lower() == "col":
                     continue
                 first_col_cells.append(cells[0])
 
@@ -463,12 +684,16 @@ def fix_data_table_headers(html_content: str, log: bool = True):
             "table_count": table_count,
             "header_fixed_count": header_fixed_count,
             "row_header_fixed_count": row_header_fixed_count,
+            "orient_col_fixed_count": orient_meta.get("orient_col_fixed_count", 0),
+            "orient_row_fixed_count": orient_meta.get("orient_row_fixed_count", 0),
         }
     except Exception:
         return html_content, {
             "table_count": 0,
             "header_fixed_count": 0,
             "row_header_fixed_count": 0,
+            "orient_col_fixed_count": 0,
+            "orient_row_fixed_count": 0,
         }
 
 
@@ -1131,6 +1356,8 @@ def pre_clean(
         "table_count": 0,
         "header_fixed_count": 0,
         "row_header_fixed_count": 0,
+        "orient_col_fixed_count": 0,
+        "orient_row_fixed_count": 0,
     }
 
     h = html
