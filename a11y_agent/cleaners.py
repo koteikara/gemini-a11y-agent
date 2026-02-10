@@ -72,6 +72,12 @@ DIV_FORBIDDEN_ATTRS_FROM_TABLE = {
     "scope", "headers", "axis", "abbr", "rowspan", "colspan"
 }
 
+# --- 本文混入の内部識別ラベル削除 ---
+FORBIDDEN_INTERNAL_TEXT_PATTERNS = [
+    r"\bBASIC_PARTS_SET\b",
+    r"\bINDEX\s+PAGE\s+ITEM\b",
+]
+
 
 # ==============================================================================
 # 内部ヘルパー
@@ -89,6 +95,14 @@ def _is_file_like_link(a_tag) -> bool:
         return False
     except Exception:
         return False
+
+
+def _drop_internal_markers(text: str) -> str:
+    """本文テキストから内部識別ラベルを除去して空白を正規化。"""
+    new_text = str(text or "")
+    for pat in FORBIDDEN_INTERNAL_TEXT_PATTERNS:
+        new_text = re.sub(pat, " ", new_text, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", new_text).strip()
 
 
 def _is_layout_table(table_tag: Tag) -> bool:
@@ -338,6 +352,25 @@ def remove_fileinfo_anywhere_text(html_content: str) -> str:
             new_txt = txt
             for pat in FILEINFO_PATTERNS:
                 new_txt = pat.sub("", new_txt)
+            if new_txt != txt:
+                node.replace_with(new_txt)
+
+        return str(soup)
+    except Exception:
+        return html_content
+
+
+def remove_forbidden_internal_text_anywhere(html_content: str) -> str:
+    """本文に混入した内部識別ラベルをテキストノードから除去。"""
+    try:
+        soup = BeautifulSoup(html_content, "html.parser")
+
+        for node in soup.find_all(string=True):
+            if not isinstance(node, NavigableString):
+                continue
+
+            txt = str(node)
+            new_txt = _drop_internal_markers(txt)
             if new_txt != txt:
                 node.replace_with(new_txt)
 
@@ -651,8 +684,9 @@ def pre_clean(
         2. remove_deprecated_and_nonstandard_attrs
         3. strip_px_sizes_from_style_attr
         4. remove_fileinfo_anywhere_text
-        5. enrich_iframe_titles
-        6. convert_layout_tables_to_div（フラグ依存）
+        5. remove_forbidden_internal_text_anywhere
+        6. enrich_iframe_titles
+        7. convert_layout_tables_to_div（フラグ依存）
 
     Returns:
         (cleaned_html, meta_dict)
@@ -668,6 +702,7 @@ def pre_clean(
     h = remove_deprecated_and_nonstandard_attrs(h)
     h = strip_px_sizes_from_style_attr(h)
     h = remove_fileinfo_anywhere_text(h)
+    h = remove_forbidden_internal_text_anywhere(h)
     if FEATURE_IFRAME_TITLE_ENRICH:
         h = enrich_iframe_titles(
             h,
