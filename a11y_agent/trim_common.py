@@ -175,17 +175,40 @@ def is_noise_block(block_text: str) -> bool:
     return False
 
 
-def should_apply_end_trim(block_text: str, current_blocks, upcoming_blocks, has_accepted_content: bool):
+def should_apply_end_trim(
+    block_text: str,
+    current_blocks,
+    upcoming_blocks,
+    has_accepted_content: bool,
+    accepted_blocks=None,
+    check_trigger: bool = True,
+):
     """end-trim実行可否を返す。テーブル導入文の保護条件を優先。"""
-    if not is_end_trim_trigger(block_text):
-        return False, False, False
+    if check_trigger and not is_end_trim_trigger(block_text):
+        return False, False, False, ""
 
-    protect, intro_detected, table_ahead = is_protect_table_intro(
+    protect, intro_detected, table_ahead, _ = is_protect_table_intro(
         current_blocks=current_blocks,
         upcoming_blocks=upcoming_blocks,
+        lookahead=2,
     )
+
+    accepted_intro = False
+    if accepted_blocks:
+        for accepted in list(accepted_blocks)[-3:]:
+            acc_protect, _, _, _ = is_protect_table_intro(
+                current_blocks=[accepted],
+                upcoming_blocks=list(current_blocks or []) + list(upcoming_blocks or []),
+                lookahead=2,
+            )
+            if acc_protect:
+                accepted_intro = True
+                break
+
     if protect:
-        return False, intro_detected, table_ahead
+        return False, intro_detected, table_ahead, "protect_table_intro_upcoming"
+    if accepted_intro:
+        return False, True, True, "protect_table_intro_accepted"
     if not has_accepted_content:
-        return False, intro_detected, table_ahead
-    return True, intro_detected, table_ahead
+        return False, intro_detected, table_ahead, "no_accepted_content"
+    return True, intro_detected, table_ahead, ""

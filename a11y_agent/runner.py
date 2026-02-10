@@ -41,6 +41,7 @@ from .cleaners import (
     absolutize_paths,
     convert_layout_tables_to_div_preserve_dom,
     chunk_has_data_table_like,
+    is_protect_table_intro,
 )
 from .trim_common import (
     drop_common_blocks_by_selectors,
@@ -201,6 +202,7 @@ def process_page(row: dict, client, vision_cache: dict) -> dict:
     page_step_tokens = defaultdict(int)
     page_step_calls = defaultdict(int)
     final_blocks = []
+    table_intro_lookahead = 2
 
     # ------------------------------------------------------------------
     # Step 4-9: ブロック単位処理
@@ -215,13 +217,14 @@ def process_page(row: dict, client, vision_cache: dict) -> dict:
 
         # Step 4a: ブロック段階の終端カット
         if ENABLE_BLOCK_LEVEL_END_TRIM and is_end_trim_trigger(raw_text):
-            should_trim, intro_detected, table_ahead = should_apply_end_trim(
+            should_trim, intro_detected, table_ahead, suppress_reason = should_apply_end_trim(
                 block_text=raw_text,
                 current_blocks=[raw_ch],
-                upcoming_blocks=chunks[b:b + 3],
+                upcoming_blocks=chunks[b:b + table_intro_lookahead],
                 has_accepted_content=bool(final_blocks),
+                accepted_blocks=final_blocks,
             )
-            if intro_detected and table_ahead:
+            if suppress_reason.startswith("protect_table_intro"):
                 print(
                     f"  ⚠️ end-trim suppressed: protect_table_intro "
                     f"table_ahead={'Y' if table_ahead else 'N'} "
@@ -295,8 +298,21 @@ def process_page(row: dict, client, vision_cache: dict) -> dict:
         ch, meta2 = pre_clean(ch, base_url=url, do_layout_table_convert=False)
         post_len = len(ch)
 
+        protect_intro, _, table_ahead, keyword_hit = is_protect_table_intro(
+            current_blocks=[raw_ch],
+            upcoming_blocks=chunks[b:b + table_intro_lookahead],
+            lookahead=table_intro_lookahead,
+        )
+        force_accept = bool(protect_intro)
+        if force_accept:
+            print(
+                f"  ✅ force_accept intro block: idx={b} "
+                f"table_ahead={'Y' if table_ahead else 'N'} "
+                f"keyword_hit={keyword_hit or '-'}"
+            )
+
         # Step 8: 空ブロック破棄
-        if not ch or len(ch.strip()) < 20:
+        if (not ch or len(ch.strip()) < 20) and not force_accept:
             page_dropped_blocks += 1
             if raw_len < 50:
                 print(f"  ⚠️ empty-ish -> skipped (raw_len<50): block={b}")
@@ -308,7 +324,7 @@ def process_page(row: dict, client, vision_cache: dict) -> dict:
             continue
 
         # Step 9: 積み上げ
-        final_blocks.append(ch)
+        final_blocks.append(ch if ch and ch.strip() else raw_ch)
 
         extra = (
             f"raw_len={raw_len},pre_len={pre_len},post_len={post_len},"
@@ -366,10 +382,21 @@ def process_page(row: dict, client, vision_cache: dict) -> dict:
     # Step 15: Menu/PageTop 境界カット
     # ------------------------------------------------------------------
     if TRIM_AFTER_MENU_PAGETOP and not page_trim_applied:
-        final_html, trimmed = trim_after_menu_pagetop(final_html)
-        if trimmed:
-            page_trim_applied = True
-            page_trim_reason = "menu_pagetop_trim"
+        allow_trim, intro_detected, table_ahead, suppress_reason = should_apply_end_trim(
+            block_text="",
+            current_blocks=final_blocks[:1],
+            upcoming_blocks=final_blocks[1:1 + table_intro_lookahead],
+            has_accepted_content=bool(final_blocks),
+            accepted_blocks=final_blocks,
+            check_trigger=False,
+        )
+        if suppress_reason.startswith("protect_table_intro"):
+            print("  ⚠️ end-trim suppressed: protect_table_intro page_level=Y")
+        elif allow_trim:
+            final_html, trimmed = trim_after_menu_pagetop(final_html)
+            if trimmed:
+                page_trim_applied = True
+                page_trim_reason = "menu_pagetop_trim"
 
     # ------------------------------------------------------------------
     # Step 16: Vision（K列がONのとき）
@@ -442,10 +469,21 @@ def process_page(row: dict, client, vision_cache: dict) -> dict:
 
         # 既にtrim済みなら再trimしない
         if TRIM_AFTER_MENU_PAGETOP and not page_trim_applied:
-            final_html, trimmed2 = trim_after_menu_pagetop(final_html)
-            if trimmed2:
-                page_trim_applied = True
-                page_trim_reason = page_trim_reason or "menu_pagetop_trim_post_vision"
+            allow_trim2, _, _, suppress_reason2 = should_apply_end_trim(
+                block_text="",
+                current_blocks=final_blocks[:1],
+                upcoming_blocks=final_blocks[1:1 + table_intro_lookahead],
+                has_accepted_content=bool(final_blocks),
+                accepted_blocks=final_blocks,
+                check_trigger=False,
+            )
+            if suppress_reason2.startswith("protect_table_intro"):
+                print("  ⚠️ end-trim suppressed: protect_table_intro page_level=post_vision")
+            elif allow_trim2:
+                final_html, trimmed2 = trim_after_menu_pagetop(final_html)
+                if trimmed2:
+                    page_trim_applied = True
+                    page_trim_reason = page_trim_reason or "menu_pagetop_trim_post_vision"
 
         print(
             f"  🎨 Vision alt summary:"

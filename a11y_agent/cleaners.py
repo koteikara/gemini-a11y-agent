@@ -94,9 +94,12 @@ FORBIDDEN_INTERNAL_TEXT_PATTERNS = [
 
 # --- Protect explanation text before data tables ---
 PROTECT_TABLE_INTRO_KEYWORDS = [
-    "受診", "診療時間", "健康保険証", "当番医",
-    "※", "注意", "お問い合わせ", "ご利用ください",
+    "休日", "夜間", "受診", "診療時間", "当番医", "在宅当番医",
+    "受付", "保険証", "小児", "歯科", "特定健診", "お問い合わせ",
+    "ご利用ください",
 ]
+PROTECT_TABLE_INTRO_MIN_TEXT_LEN = 30
+PROTECT_TABLE_INTRO_HINT_PAT = re.compile(r"(?:※|注記|注意|ください|しましょう|受付|診療時間)")
 
 
 # ==============================================================================
@@ -904,10 +907,22 @@ def chunk_has_data_table_like(html_chunk: str) -> bool:
 def has_data_table_ahead(blocks, lookahead: int = 3) -> bool:
     """次ブロック群にレイアウトtable以外のtableが存在するか判定。"""
     try:
+        def _is_data_table_candidate(table: Tag) -> bool:
+            if _is_layout_table(table):
+                return False
+            if table.find("caption") is not None:
+                return True
+            if table.find("thead") is not None:
+                return True
+            for th in table.find_all("th"):
+                if (th.get("scope") or "").lower() == "col":
+                    return True
+            return False
+
         if isinstance(blocks, (BeautifulSoup, Tag)):
             tables = blocks.find_all("table")
             for table in tables:
-                if not _is_layout_table(table):
+                if _is_data_table_candidate(table):
                     return True
             return False
 
@@ -915,7 +930,7 @@ def has_data_table_ahead(blocks, lookahead: int = 3) -> bool:
         for block in target_blocks:
             soup = BeautifulSoup(str(block or ""), "html.parser")
             for table in soup.find_all("table"):
-                if not _is_layout_table(table):
+                if _is_data_table_candidate(table):
                     return True
         return False
     except Exception:
@@ -929,22 +944,42 @@ def is_protect_table_intro(current_blocks, upcoming_blocks, lookahead: int = 3):
     - 次のNブロック内にデータテーブルがある
 
     Returns:
-        (protect: bool, intro_detected: bool, table_ahead: bool)
+        (protect: bool, intro_detected: bool, table_ahead: bool, keyword_hit: str)
     """
     intro_detected = False
     table_ahead = False
+    keyword_hit = ""
+
+    def _detect_intro_text(text: str):
+        norm = re.sub(r"\s+", " ", str(text or "")).strip()
+        if len(norm) < PROTECT_TABLE_INTRO_MIN_TEXT_LEN:
+            return False, ""
+
+        hit = ""
+        for kw in PROTECT_TABLE_INTRO_KEYWORDS:
+            if kw in norm:
+                hit = kw
+                break
+
+        if hit:
+            return True, hit
+        if PROTECT_TABLE_INTRO_HINT_PAT.search(norm):
+            return True, "hint"
+        return False, ""
 
     try:
         for block in list(current_blocks or []):
             text = BeautifulSoup(str(block or ""), "html.parser").get_text(" ", strip=True)
-            if any(k in text for k in PROTECT_TABLE_INTRO_KEYWORDS):
+            is_intro, hit = _detect_intro_text(text)
+            if is_intro:
                 intro_detected = True
+                keyword_hit = hit
                 break
     except Exception:
         intro_detected = False
 
     table_ahead = has_data_table_ahead(upcoming_blocks, lookahead=lookahead)
-    return intro_detected and table_ahead, intro_detected, table_ahead
+    return intro_detected and table_ahead, intro_detected, table_ahead, keyword_hit
 
 
 def protect_table_intro_blocks(html_content: str) -> str:
