@@ -4,7 +4,7 @@
 
 import re
 import requests
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 
 from bs4 import BeautifulSoup
 from bs4.element import NavigableString, Tag
@@ -170,14 +170,17 @@ def fetch_title_from_url(src_url: str, timeout_sec: int = IFRAME_TITLE_FETCH_TIM
 def fetch_youtube_oembed_title(embed_url: str, timeout_sec: int = IFRAME_TITLE_FETCH_TIMEOUT):
     """YouTube埋め込みURLのoEmbedから動画タイトルを取得。"""
     canonical_embed_url = embed_url.split("?", 1)[0]
-    if not YOUTUBE_EMBED_PAT.match(canonical_embed_url):
+    m = YOUTUBE_EMBED_PAT.match(canonical_embed_url)
+    if not m:
         return "", "invalid_youtube_embed"
 
+    video_id = m.group(1)
+    watch_url = "https://www.youtube.com/watch?v=" + video_id
+    oembed_url = "https://www.youtube.com/oembed?url=" + quote(watch_url) + "&format=json"
+
     try:
-        endpoint = "https://www.youtube.com/oembed"
         resp = requests.get(
-            endpoint,
-            params={"url": canonical_embed_url, "format": "json"},
+            oembed_url,
             timeout=timeout_sec,
             headers={"User-Agent": "Mozilla/5.0"},
         )
