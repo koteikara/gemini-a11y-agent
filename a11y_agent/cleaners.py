@@ -60,6 +60,7 @@ YOUTUBE_EMBED_PAT = re.compile(r"^https?://(?:www\.)?(?:youtube\.com|youtube-noc
 GENERIC_IFRAME_TITLES = {"youtube video player", "youtube", "video player", "player"}
 GENERIC_VIDEO_TITLES = {"video", "動画", "movie"}
 YOUTUBE_SUFFIX = "（YouTube）"
+MAX_IFRAME_TITLE_SEED_LEN = 100
 MAX_IFRAME_TITLE_LEN = 40
 
 # --- UI的テキストパターン（table判定用） ---
@@ -210,6 +211,7 @@ def _clean_title_seed(text: str) -> str:
 
 def _format_youtube_iframe_title(base_title: str) -> str:
     cleaned = _clean_title_seed(base_title)
+    cleaned = cleaned[:MAX_IFRAME_TITLE_SEED_LEN]
     if not cleaned:
         cleaned = "動画"
 
