@@ -5,6 +5,10 @@
 import requests
 from lxml import html as lxml_html
 import trafilatura
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 def _inner_html(el) -> str:
@@ -60,6 +64,9 @@ def robust_extract_xpath_first(url: str, xpath: str):
 
     xp = extract_by_xpath(full_html, xpath)
 
+    if xp:
+        logger.debug("extracted_html_head=%s", xp[:400].replace("\n", "\\n"))
+
     # XPathが本文コンテナを指している場合はroot配下本文全体（innerHTML）を厳密に採用
     try:
         if xpath:
@@ -70,6 +77,15 @@ def robust_extract_xpath_first(url: str, xpath: str):
                 if hasattr(root, "xpath"):
                     root_inner = _inner_html(root)
                     if root_inner:
+                        root_children_tags = [
+                            (getattr(c, "tag", "") or "").lower()
+                            for c in list(root)
+                            if isinstance(getattr(c, "tag", None), str)
+                        ]
+                        logger.debug(
+                            "xpath_root_children_head=%s",
+                            root_children_tags[:20],
+                        )
                         root_children = [
                             c
                             for c in list(root)
@@ -79,8 +95,19 @@ def robust_extract_xpath_first(url: str, xpath: str):
                             (c.tag or "").lower() != "table" for c in root_children
                         )
                         starts_with_table = root_inner.lstrip().lower().startswith("<table")
-                        if not (starts_with_table and has_non_table_root_child):
+                        if starts_with_table and has_non_table_root_child:
+                            # root直下のDOM順連結で、先頭テキスト/要素の欠落を防ぐ
+                            ordered_parts = []
+                            if root.text:
+                                ordered_parts.append(root.text)
+                            for c in list(root):
+                                ordered_parts.append(
+                                    lxml_html.tostring(c, encoding="unicode", method="html")
+                                )
+                            xp = "".join(ordered_parts)
+                        else:
                             xp = root_inner
+                        logger.debug("extracted_html_head=%s", xp[:400].replace("\n", "\\n"))
     except Exception:
         pass
 

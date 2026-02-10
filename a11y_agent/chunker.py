@@ -3,9 +3,12 @@
 # ==============================================================================
 
 from bs4 import BeautifulSoup
+import logging
 from bs4.element import NavigableString, Tag
 
 from .cleaners import chunk_has_data_table_like
+
+logger = logging.getLogger(__name__)
 
 
 TEXT_LIKE_TAGS = {
@@ -201,8 +204,24 @@ def structural_chunk(html: str, limit: int) -> list:
                         [ch[i : i + limit] for i in range(0, len(ch), limit)]
                     )
 
-        return [c for c in final if c.strip()] or [str(body)]
+        final_chunks = [c for c in final if c.strip()] or [str(body)]
+        if final_chunks:
+            logger.debug("chunk_1_head=%s", final_chunks[0][:400].replace("\n", "\\n"))
+            starts_with_table = [
+                c.lstrip().lower().startswith("<table")
+                for c in final_chunks
+            ]
+            logger.debug("chunk_starts_with_table=%s", starts_with_table)
+        return final_chunks
     except Exception:
         if len(html) <= limit:
-            return [html]
-        return [html[i : i + limit] for i in range(0, len(html), limit)]
+            fallback = [html]
+        else:
+            fallback = [html[i : i + limit] for i in range(0, len(html), limit)]
+        if fallback:
+            logger.debug("chunk_1_head=%s", fallback[0][:400].replace("\n", "\\n"))
+            logger.debug(
+                "chunk_starts_with_table=%s",
+                [c.lstrip().lower().startswith("<table") for c in fallback],
+            )
+        return fallback
