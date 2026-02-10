@@ -4,11 +4,15 @@
 
 from bs4 import BeautifulSoup
 import logging
+import re
 from bs4.element import NavigableString, Tag
 
-from .cleaners import chunk_has_data_table_like
+from .cleaners import chunk_has_data_table_like, PROTECT_TABLE_INTRO_KEYWORDS
 
 logger = logging.getLogger(__name__)
+
+
+UPDATE_LINE_PAT = re.compile(r"^更新：\d{4}年\d{2}月\s*\d{1,2}日$")
 
 
 TEXT_LIKE_TAGS = {
@@ -65,6 +69,44 @@ def _is_intro_text_block(node) -> bool:
         return False
 
 
+def _is_heading_node(node) -> bool:
+    return isinstance(node, Tag) and node.name in {"h2", "h3", "h4"}
+
+
+def _has_intro_keyword(node) -> bool:
+    try:
+        text = " ".join((node.get_text(" ", strip=True) if isinstance(node, Tag) else str(node)).split())
+        return any(kw in text for kw in PROTECT_TABLE_INTRO_KEYWORDS)
+    except Exception:
+        return False
+
+
+def _is_note_line(node) -> bool:
+    try:
+        text = (node.get_text(" ", strip=True) if isinstance(node, Tag) else str(node)).strip()
+        return text.startswith("※")
+    except Exception:
+        return False
+
+
+def _is_update_line_only(node) -> bool:
+    try:
+        text = (node.get_text(" ", strip=True) if isinstance(node, Tag) else str(node)).strip()
+        return bool(UPDATE_LINE_PAT.match(text))
+    except Exception:
+        return False
+
+
+def _intro_priority(node) -> int:
+    if _is_heading_node(node):
+        return 0
+    if _has_intro_keyword(node):
+        return 1
+    if _is_note_line(node):
+        return 2
+    return 3
+
+
 def _merge_table_intro_children(children: list) -> list:
     """データテーブル直前の連続する導入文ブロックを同一要素としてマージ。"""
     merged = []
@@ -81,7 +123,8 @@ def _merge_table_intro_children(children: list) -> list:
             if intro_start < i and merged and len(merged) >= (i - intro_start):
                 intro_parts = merged[-(i - intro_start):]
                 merged = merged[: -(i - intro_start)]
-                merged.append("".join(str(x) for x in intro_parts) + str(child))
+                filtered_intro_parts = [x for x in intro_parts if not _is_update_line_only(x)]
+                merged.append("".join(str(x) for x in filtered_intro_parts) + str(child))
             else:
                 merged.append(child)
             i += 1
