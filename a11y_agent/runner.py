@@ -11,6 +11,7 @@ import gspread
 from google.colab import userdata
 from google import genai
 from bs4 import BeautifulSoup
+from bs4.element import Tag
 
 from .config import (
     TOOL_VERSION,
@@ -112,6 +113,39 @@ def _has_intro_text_with_table(block_html: str) -> bool:
         return bool(PROTECT_TABLE_INTRO_HINT_PAT.search(norm))
     except Exception:
         return False
+
+
+def _table_identity(table_tag: Tag, table_idx: int) -> str:
+    """ログ向けにtableの識別情報を返す（id/data属性/DOM順）。"""
+    try:
+        if table_tag.has_attr("id") and table_tag.get("id"):
+            return f"id={table_tag.get('id')}"
+        for k, v in table_tag.attrs.items():
+            if k.startswith("data-") and v:
+                return f"{k}={v}"
+    except Exception:
+        pass
+    return f"dom_index={table_idx}"
+
+
+def _parse_single_table_response(resp_html: str):
+    """LLM応答がtable単体として妥当ならTagを返し、妥当でなければNone。"""
+    try:
+        soup = BeautifulSoup(resp_html, "html.parser")
+        tables = soup.find_all("table")
+        if len(tables) != 1:
+            return None
+
+        # table以外の要素混入（例: div/p 付き）や可視テキスト混入は不許可
+        non_table_tag = soup.find(lambda t: t.name not in {"html", "body", "table"})
+        if non_table_tag is not None:
+            return None
+        if soup.get_text(" ", strip=True):
+            return None
+
+        return tables[0]
+    except Exception:
+        return None
 
 
 def print_startup_info():
@@ -291,17 +325,42 @@ def process_page(row: dict, client, vision_cache: dict) -> dict:
         ch, meta1 = pre_clean(raw_ch, base_url=url, do_layout_table_convert=True)
         pre_len = len(ch)
 
-        # Step 6a: データtable LLM修正
+        # Step 6a: データtable LLM修正（table単体を個別に処理して差し戻し）
         table_fix = False
         try:
             if "<table" in ch and chunk_has_data_table_like(ch):
-                out, tok = call_llm(client, prompt_tables(ch))
-                step_tokens["tables"] += tok
-                step_calls["tables"] += 1
-                block_tokens += tok
-                if out and len(out) >= MIN_LLM_OUTPUT_CHARS:
-                    ch = out
+                soup_tables = BeautifulSoup(ch, "html.parser")
+                data_tables = [
+                    t for t in soup_tables.find_all("table")
+                    if chunk_has_data_table_like(str(t))
+                ]
+                for table_idx, tbl in enumerate(data_tables, start=1):
+                    table_key = _table_identity(tbl, table_idx)
+                    out, tok = call_llm(client, prompt_tables(str(tbl)))
+                    step_tokens["tables"] += tok
+                    step_calls["tables"] += 1
+                    block_tokens += tok
+
+                    if not out or len(out) < MIN_LLM_OUTPUT_CHARS:
+                        print(
+                            f"    ⚠️ LLM(tables) fallback keep-original:"
+                            f" block={b} table={table_key} reason=short_output"
+                        )
+                        continue
+
+                    new_table = _parse_single_table_response(out)
+                    if new_table is None:
+                        print(
+                            f"    ⚠️ LLM(tables) fallback keep-original:"
+                            f" block={b} table={table_key} reason=invalid_table_response"
+                        )
+                        continue
+
+                    tbl.replace_with(new_table)
                     table_fix = True
+
+                if table_fix:
+                    ch = str(soup_tables)
         except Exception as ex:
             print(f"    ⚠️ LLM(tables) exception block={b}: {str(ex)[:140]}")
 
@@ -330,16 +389,13 @@ def process_page(row: dict, client, vision_cache: dict) -> dict:
             upcoming_blocks=chunks[b:b + table_intro_lookahead],
             lookahead=table_intro_lookahead,
         )
-        force_accept = bool(protect_intro or intro_table_compound)
+        force_accept = bool(protect_intro)
         if force_accept:
-            if intro_table_compound:
-                print(f"  ✅ force_accept intro+table block: idx={b}")
-            else:
-                print(
-                    f"  ✅ force_accept intro block: idx={b} "
-                    f"table_ahead={'Y' if table_ahead else 'N'} "
-                    f"keyword_hit={keyword_hit or '-'}"
-                )
+            print(
+                f"  ✅ force_accept intro block: idx={b} "
+                f"table_ahead={'Y' if table_ahead else 'N'} "
+                f"keyword_hit={keyword_hit or '-'}"
+            )
 
         # Step 8: 空ブロック破棄
         if (not ch or len(ch.strip()) < 20) and not force_accept:
