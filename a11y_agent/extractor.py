@@ -11,6 +11,15 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+VISIBLE_BLOCK_TAGS = {
+    "h1", "h2", "h3", "h4", "h5", "h6",
+    "p", "div", "section", "article", "main",
+    "ul", "ol", "li", "dl", "dt", "dd",
+    "blockquote", "pre", "table",
+}
+SKIP_TAGS = {"script", "style", "noscript", "template"}
+
+
 def _inner_html(el) -> str:
     """lxml要素のinnerHTMLを返す（先頭/末尾テキストを保持）。"""
     try:
@@ -50,6 +59,35 @@ def extract_by_xpath(full_html: str, xpath: str):
     return None
 
 
+def _rebuild_inner_html_dom_order(root) -> str:
+    """root配下をDOM順に再連結したinnerHTMLを返す。"""
+    parts = []
+    if root.text:
+        parts.append(root.text)
+    for child in list(root):
+        if not isinstance(getattr(child, "tag", None), str):
+            continue
+        if (child.tag or "").lower() in SKIP_TAGS:
+            continue
+        parts.append(lxml_html.tostring(child, encoding="unicode", method="html"))
+    return "".join(parts)
+
+
+def _is_table_only_root(root) -> bool:
+    """可視ブロック要素がtable以外に存在しなければtable-only。"""
+    for node in root.iterdescendants():
+        tag = (getattr(node, "tag", "") or "").lower()
+        if not tag or tag in SKIP_TAGS:
+            continue
+        if tag not in VISIBLE_BLOCK_TAGS:
+            continue
+        if tag != "table":
+            text = (node.text_content() or "").strip()
+            if text or tag.startswith("h"):
+                return False
+    return True
+
+
 def robust_extract_xpath_first(url: str, xpath: str):
     """
     XPath優先の堅牢抽出。
@@ -75,38 +113,19 @@ def robust_extract_xpath_first(url: str, xpath: str):
             if roots:
                 root = roots[0]
                 if hasattr(root, "xpath"):
-                    root_inner = _inner_html(root)
-                    if root_inner:
-                        root_children_tags = [
-                            (getattr(c, "tag", "") or "").lower()
-                            for c in list(root)
-                            if isinstance(getattr(c, "tag", None), str)
-                        ]
-                        logger.debug(
-                            "xpath_root_children_head=%s",
-                            root_children_tags[:20],
-                        )
-                        root_children = [
-                            c
-                            for c in list(root)
-                            if isinstance(getattr(c, "tag", None), str)
-                        ]
-                        has_non_table_root_child = any(
-                            (c.tag or "").lower() != "table" for c in root_children
-                        )
-                        starts_with_table = root_inner.lstrip().lower().startswith("<table")
-                        if starts_with_table and has_non_table_root_child:
-                            # root直下のDOM順連結で、先頭テキスト/要素の欠落を防ぐ
-                            ordered_parts = []
-                            if root.text:
-                                ordered_parts.append(root.text)
-                            for c in list(root):
-                                ordered_parts.append(
-                                    lxml_html.tostring(c, encoding="unicode", method="html")
-                                )
-                            xp = "".join(ordered_parts)
+                    dom_order_inner = _rebuild_inner_html_dom_order(root)
+                    if dom_order_inner:
+                        table_only = _is_table_only_root(root)
+                        starts_with_table = dom_order_inner.lstrip().lower().startswith("<table")
+                        if starts_with_table and not table_only:
+                            xp = dom_order_inner
                         else:
-                            xp = root_inner
+                            xp = dom_order_inner
+                        logger.debug(
+                            "xpath_root_table_only=%s starts_with_table=%s",
+                            table_only,
+                            starts_with_table,
+                        )
                         logger.debug("extracted_html_head=%s", xp[:400].replace("\n", "\\n"))
     except Exception:
         pass

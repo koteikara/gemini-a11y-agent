@@ -4,6 +4,7 @@
 
 import time
 import requests
+import re
 from collections import defaultdict
 
 import gspread
@@ -42,6 +43,9 @@ from .cleaners import (
     convert_layout_tables_to_div_preserve_dom,
     chunk_has_data_table_like,
     is_protect_table_intro,
+    PROTECT_TABLE_INTRO_KEYWORDS,
+    PROTECT_TABLE_INTRO_HINT_PAT,
+    PROTECT_TABLE_INTRO_MIN_TEXT_LEN,
 )
 from .trim_common import (
     drop_common_blocks_by_selectors,
@@ -89,6 +93,25 @@ def print_block_log(block_no, total_tokens, step_tokens, step_calls, extra_msg="
     if extra_msg:
         msg = f"{msg} / {extra_msg}"
     print(f"    🧾 block={block_no} total_tokens={total_tokens} | {msg}")
+
+
+def _has_intro_text_with_table(block_html: str) -> bool:
+    """導入文付きデータテーブル結合ブロックを検出。"""
+    try:
+        if not block_html or "<table" not in block_html:
+            return False
+        if not chunk_has_data_table_like(block_html):
+            return False
+
+        text = BeautifulSoup(block_html, "html.parser").get_text(" ", strip=True)
+        norm = re.sub(r"\s+", " ", text).strip()
+        if len(norm) < PROTECT_TABLE_INTRO_MIN_TEXT_LEN:
+            return False
+        if any(kw in norm for kw in PROTECT_TABLE_INTRO_KEYWORDS):
+            return True
+        return bool(PROTECT_TABLE_INTRO_HINT_PAT.search(norm))
+    except Exception:
+        return False
 
 
 def print_startup_info():
@@ -212,43 +235,47 @@ def process_page(row: dict, client, vision_cache: dict) -> dict:
             page_dropped_blocks += 1
             continue
 
+        intro_table_compound = _has_intro_text_with_table(raw_ch)
         raw_len = len(raw_ch)
         raw_text = extract_text_for_block(raw_ch)
 
         # Step 4a: ブロック段階の終端カット
         if ENABLE_BLOCK_LEVEL_END_TRIM and is_end_trim_trigger(raw_text):
-            should_trim, intro_detected, table_ahead, suppress_reason = should_apply_end_trim(
-                block_text=raw_text,
-                current_blocks=[raw_ch],
-                upcoming_blocks=chunks[b:b + table_intro_lookahead],
-                has_accepted_content=bool(final_blocks),
-                accepted_blocks=final_blocks,
-            )
-            if suppress_reason.startswith("protect_table_intro"):
-                print(
-                    f"  ⚠️ end-trim suppressed: protect_table_intro "
-                    f"table_ahead={'Y' if table_ahead else 'N'} "
-                    f"intro_detected={'Y' if intro_detected else 'N'} "
-                    f"block={b}"
-                )
-            elif should_trim:
-                page_trim_applied = True
-                page_trim_reason = f"end_trim_trigger(block={b})"
-                dropped = len(chunks) - b + 1
-                page_dropped_blocks += dropped
-                print(
-                    f"  ✂️ end-trim triggered at block {b}:"
-                    f" reason={page_trim_reason} dropped_blocks={dropped}"
-                )
-                break
+            if intro_table_compound:
+                print(f"  ⚠️ end-trim suppressed: intro+table compound block={b}")
             else:
-                print(
-                    f"  ⚠️ end-trim marker ignored at block {b}:"
-                    " no accepted content block yet"
+                should_trim, intro_detected, table_ahead, suppress_reason = should_apply_end_trim(
+                    block_text=raw_text,
+                    current_blocks=[raw_ch],
+                    upcoming_blocks=chunks[b:b + table_intro_lookahead],
+                    has_accepted_content=bool(final_blocks),
+                    accepted_blocks=final_blocks,
                 )
+                if suppress_reason.startswith("protect_table_intro"):
+                    print(
+                        f"  ⚠️ end-trim suppressed: protect_table_intro "
+                        f"table_ahead={'Y' if table_ahead else 'N'} "
+                        f"intro_detected={'Y' if intro_detected else 'N'} "
+                        f"block={b}"
+                    )
+                elif should_trim:
+                    page_trim_applied = True
+                    page_trim_reason = f"end_trim_trigger(block={b})"
+                    dropped = len(chunks) - b + 1
+                    page_dropped_blocks += dropped
+                    print(
+                        f"  ✂️ end-trim triggered at block {b}:"
+                        f" reason={page_trim_reason} dropped_blocks={dropped}"
+                    )
+                    break
+                else:
+                    print(
+                        f"  ⚠️ end-trim marker ignored at block {b}:"
+                        " no accepted content block yet"
+                    )
 
         # Step 4b: ノイズブロック判定
-        if is_noise_block(raw_text):
+        if is_noise_block(raw_text) and not intro_table_compound:
             page_dropped_blocks += 1
             print(
                 f"  🗑️ noise block skipped: block={b}"
@@ -303,13 +330,16 @@ def process_page(row: dict, client, vision_cache: dict) -> dict:
             upcoming_blocks=chunks[b:b + table_intro_lookahead],
             lookahead=table_intro_lookahead,
         )
-        force_accept = bool(protect_intro)
+        force_accept = bool(protect_intro or intro_table_compound)
         if force_accept:
-            print(
-                f"  ✅ force_accept intro block: idx={b} "
-                f"table_ahead={'Y' if table_ahead else 'N'} "
-                f"keyword_hit={keyword_hit or '-'}"
-            )
+            if intro_table_compound:
+                print(f"  ✅ force_accept intro+table block: idx={b}")
+            else:
+                print(
+                    f"  ✅ force_accept intro block: idx={b} "
+                    f"table_ahead={'Y' if table_ahead else 'N'} "
+                    f"keyword_hit={keyword_hit or '-'}"
+                )
 
         # Step 8: 空ブロック破棄
         if (not ch or len(ch.strip()) < 20) and not force_accept:
