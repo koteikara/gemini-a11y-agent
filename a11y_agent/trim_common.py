@@ -10,6 +10,8 @@ import re
 from bs4 import BeautifulSoup
 from bs4.element import NavigableString, Tag
 
+from .cleaners import is_protect_table_intro
+
 # ------------------------------------------------------------------------------
 # 明確な共通部品セレクタ（安全弁）
 # ------------------------------------------------------------------------------
@@ -171,3 +173,19 @@ def is_noise_block(block_text: str) -> bool:
         if pat.search(s):
             return True
     return False
+
+
+def should_apply_end_trim(block_text: str, current_blocks, upcoming_blocks, has_accepted_content: bool):
+    """end-trim実行可否を返す。テーブル導入文の保護条件を優先。"""
+    if not is_end_trim_trigger(block_text):
+        return False, False, False
+
+    protect, intro_detected, table_ahead = is_protect_table_intro(
+        current_blocks=current_blocks,
+        upcoming_blocks=upcoming_blocks,
+    )
+    if protect:
+        return False, intro_detected, table_ahead
+    if not has_accepted_content:
+        return False, intro_detected, table_ahead
+    return True, intro_detected, table_ahead

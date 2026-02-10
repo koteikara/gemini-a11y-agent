@@ -92,6 +92,12 @@ FORBIDDEN_INTERNAL_TEXT_PATTERNS = [
     r"\bINDEX\s+PAGE\s+ITEM\b",
 ]
 
+# --- Protect explanation text before data tables ---
+PROTECT_TABLE_INTRO_KEYWORDS = [
+    "受診", "診療時間", "健康保険証", "当番医",
+    "※", "注意", "お問い合わせ", "ご利用ください",
+]
+
 
 # ==============================================================================
 # 内部ヘルパー
@@ -895,6 +901,61 @@ def chunk_has_data_table_like(html_chunk: str) -> bool:
         return False
 
 
+def has_data_table_ahead(blocks, lookahead: int = 3) -> bool:
+    """次ブロック群にレイアウトtable以外のtableが存在するか判定。"""
+    try:
+        if isinstance(blocks, (BeautifulSoup, Tag)):
+            tables = blocks.find_all("table")
+            for table in tables:
+                if not _is_layout_table(table):
+                    return True
+            return False
+
+        target_blocks = list(blocks or [])[:lookahead]
+        for block in target_blocks:
+            soup = BeautifulSoup(str(block or ""), "html.parser")
+            for table in soup.find_all("table"):
+                if not _is_layout_table(table):
+                    return True
+        return False
+    except Exception:
+        return False
+
+
+def is_protect_table_intro(current_blocks, upcoming_blocks, lookahead: int = 3):
+    """
+    テーブル前説明文保護判定：
+    - 現在ブロック内に説明文キーワードがある
+    - 次のNブロック内にデータテーブルがある
+
+    Returns:
+        (protect: bool, intro_detected: bool, table_ahead: bool)
+    """
+    intro_detected = False
+    table_ahead = False
+
+    try:
+        for block in list(current_blocks or []):
+            text = BeautifulSoup(str(block or ""), "html.parser").get_text(" ", strip=True)
+            if any(k in text for k in PROTECT_TABLE_INTRO_KEYWORDS):
+                intro_detected = True
+                break
+    except Exception:
+        intro_detected = False
+
+    table_ahead = has_data_table_ahead(upcoming_blocks, lookahead=lookahead)
+    return intro_detected and table_ahead, intro_detected, table_ahead
+
+
+def protect_table_intro_blocks(html_content: str) -> str:
+    """DOMを壊さず、テーブル導入文保護のための前処理フック。"""
+    try:
+        soup = BeautifulSoup(html_content, "html.parser")
+        return str(soup)
+    except Exception:
+        return html_content
+
+
 def absolutize_paths(html_content: str, base_url: str) -> str:
     """img src / a href / iframe src を絶対URLに変換"""
     soup = BeautifulSoup(html_content, "html.parser")
@@ -924,9 +985,10 @@ def pre_clean(
         3. strip_px_sizes_from_style_attr
         4. remove_fileinfo_anywhere_text
         5. remove_forbidden_internal_text_anywhere
-        6. fix_data_table_headers
-        7. enrich_iframe_titles
-        8. convert_layout_tables_to_div（フラグ依存）
+        6. protect_table_intro_blocks
+        7. fix_data_table_headers
+        8. enrich_iframe_titles
+        9. convert_layout_tables_to_div（フラグ依存）
 
     Returns:
         (cleaned_html, meta_dict)
@@ -946,6 +1008,7 @@ def pre_clean(
     h = strip_px_sizes_from_style_attr(h)
     h = remove_fileinfo_anywhere_text(h)
     h = remove_forbidden_internal_text_anywhere(h)
+    h = protect_table_intro_blocks(h)
 
     h, table_meta = fix_data_table_headers(h, log=True)
     meta.update(table_meta)
