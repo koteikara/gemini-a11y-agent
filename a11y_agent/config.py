@@ -6,8 +6,8 @@ import datetime
 import re
 
 # === ツール情報 ===
-TOOL_VERSION = "Ver 35.0-minpatch+AltFixPatch (patched v22 end-trim + cleanup-fixes)"
-BUILD_ID = "v22.1"
+TOOL_VERSION = "v1.0"
+BUILD_ID = "v1.0"
 MODEL_ID = "gemini-2.0-flash"
 
 # === シート・Drive ===
