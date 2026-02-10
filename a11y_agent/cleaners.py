@@ -157,9 +157,24 @@ def _drop_internal_markers(text: str) -> str:
 def _is_marker_like_text_node(text: str) -> bool:
     """内部マーカ混入ノードらしさを判定（日本語文の巻き込み防止）。"""
     t = str(text or "")
-    if not t.strip():
+    t_strip = t.strip()
+    if not t_strip:
         return False
     if not any(pat.search(t) for pat in FORBIDDEN_INTERNAL_TEXT_TOKEN_PATTERNS):
+        return False
+
+    # 長文本文は対象外（短いマーカー文ノードのみに限定）
+    if len(t_strip) > 200:
+        return False
+
+    ascii_chars = len(re.findall(r"[\x00-\x7F]", t_strip))
+    ascii_ratio = (ascii_chars / len(t_strip)) if t_strip else 0.0
+    if ascii_ratio < 0.6:
+        return False
+
+    jp_punct_count = sum(t_strip.count(ch) for ch in ("。", "、"))
+    kana_count = len(re.findall(r"[\u3040-\u30FF]", t_strip))
+    if jp_punct_count >= 1 or kana_count >= 3:
         return False
 
     jp_char_count = len(re.findall(r"[\u3040-\u30FF\u3400-\u9FFF]", t))
@@ -664,6 +679,8 @@ def remove_forbidden_internal_text_anywhere(html_content: str) -> str:
     try:
         soup = BeautifulSoup(html_content, "html.parser")
         changed_nodes = 0
+        max_removed_chars = 0
+        max_reduction_ratio = 0.0
         sample_before = ""
         sample_after = ""
 
@@ -677,12 +694,23 @@ def remove_forbidden_internal_text_anywhere(html_content: str) -> str:
             new_txt = _drop_internal_markers(txt)
             if new_txt != txt:
                 changed_nodes += 1
+                removed_chars = len(txt) - len(new_txt)
+                reduction_ratio = (removed_chars / len(txt)) if txt else 0.0
+                if removed_chars > max_removed_chars:
+                    max_removed_chars = removed_chars
+                if reduction_ratio > max_reduction_ratio:
+                    max_reduction_ratio = reduction_ratio
                 if not sample_before:
                     sample_before = _shorten_for_log(txt)
                     sample_after = _shorten_for_log(new_txt)
                 node.replace_with(new_txt)
 
-        logger.debug("removed_internal_markers: changed_nodes=%d", changed_nodes)
+        logger.debug(
+            "removed_internal_markers: changed_nodes=%d max_removed_chars=%d max_reduction_ratio=%.3f",
+            changed_nodes,
+            max_removed_chars,
+            max_reduction_ratio,
+        )
         if sample_before:
             logger.debug(
                 "removed_internal_markers_sample: before='%s' after='%s'",
@@ -1110,7 +1138,10 @@ def pre_clean(
     h = remove_deprecated_and_nonstandard_attrs(h)
     h = strip_px_sizes_from_style_attr(h)
     h = remove_fileinfo_anywhere_text(h)
+
+    logger.debug("pre_clean_before_remove_internal_head=%s", h[:400].replace("\n", "\\n"))
     h = remove_forbidden_internal_text_anywhere(h)
+    logger.debug("pre_clean_after_remove_internal_head=%s", h[:400].replace("\n", "\\n"))
     h = protect_table_intro_blocks(h)
 
     h, table_meta = fix_data_table_headers(h, log=True)
