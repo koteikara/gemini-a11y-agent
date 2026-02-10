@@ -4,7 +4,7 @@
 
 import re
 import requests
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 
 from bs4 import BeautifulSoup
 from bs4.element import NavigableString, Tag
