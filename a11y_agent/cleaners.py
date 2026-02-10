@@ -61,7 +61,6 @@ GENERIC_IFRAME_TITLES = {"youtube video player", "youtube", "video player", "pla
 GENERIC_VIDEO_TITLES = {"video", "動画", "movie"}
 YOUTUBE_SUFFIX = "（YouTube）"
 MAX_IFRAME_TITLE_SEED_LEN = 100
-MAX_IFRAME_TITLE_LEN = 40
 
 # --- UI的テキストパターン（table判定用） ---
 UIISH_TEXT_PAT = re.compile(
@@ -214,24 +213,7 @@ def _format_youtube_iframe_title(base_title: str) -> str:
     cleaned = cleaned[:MAX_IFRAME_TITLE_SEED_LEN]
     if not cleaned:
         cleaned = "動画"
-
-    has_sentence_end = bool(re.search(r"[。！？!?]$", cleaned))
-    is_content_keyword = bool(re.search(r"(メッセージ|インタビュー|講演|説明|紹介|ダイジェスト|PV|プロモーション)", cleaned, re.IGNORECASE))
-    if "動画" in cleaned or has_sentence_end or is_content_keyword:
-        full = f"{cleaned}{YOUTUBE_SUFFIX}"
-    else:
-        full = f"{cleaned}の動画{YOUTUBE_SUFFIX}"
-
-    if len(full) <= MAX_IFRAME_TITLE_LEN:
-        return full
-
-    suffix = YOUTUBE_SUFFIX
-    core = full
-    if core.endswith(suffix):
-        core = core[:-len(suffix)]
-
-    keep = max(1, MAX_IFRAME_TITLE_LEN - len(suffix) - 1)
-    return f"{core[:keep]}…{suffix}"
+    return f"{cleaned}{YOUTUBE_SUFFIX}"
 
 
 def _extract_context_text(iframe_tag: Tag) -> str:
@@ -405,8 +387,6 @@ def enrich_iframe_titles(
                 if _is_bad_youtube_title(cur_title):
                     need = True
                 elif YOUTUBE_SUFFIX not in cur_title:
-                    need = True
-                elif len(cur_title) > MAX_IFRAME_TITLE_LEN:
                     need = True
             else:
                 if not t_norm:
