@@ -7,6 +7,21 @@ from lxml import html as lxml_html
 import trafilatura
 
 
+def _inner_html(el) -> str:
+    """lxml要素のinnerHTMLを返す（先頭/末尾テキストを保持）。"""
+    try:
+        parts = []
+        if el.text:
+            parts.append(el.text)
+        for child in el:
+            parts.append(
+                lxml_html.tostring(child, encoding="unicode", method="html")
+            )
+        return "".join(parts)
+    except Exception:
+        return ""
+
+
 def extract_by_xpath(full_html: str, xpath: str):
     """
     lxmlでXPath抽出。成功時はHTML文字列、失敗時はNone。
@@ -17,7 +32,15 @@ def extract_by_xpath(full_html: str, xpath: str):
         tree = lxml_html.fromstring(full_html)
         els = tree.xpath(xpath)
         if els:
-            return lxml_html.tostring(els[0], encoding="unicode", method="html")
+            first = els[0]
+            if hasattr(first, "tag"):
+                inner = _inner_html(first)
+                return inner or lxml_html.tostring(
+                    first,
+                    encoding="unicode",
+                    method="html",
+                )
+            return str(first)
     except Exception:
         return None
     return None
@@ -36,6 +59,31 @@ def robust_extract_xpath_first(url: str, xpath: str):
     full_html = resp.text
 
     xp = extract_by_xpath(full_html, xpath)
+
+    # XPathが本文コンテナを指している場合はroot配下本文全体（innerHTML）を厳密に採用
+    try:
+        if xpath:
+            tree = lxml_html.fromstring(full_html)
+            roots = tree.xpath(xpath)
+            if roots:
+                root = roots[0]
+                if hasattr(root, "xpath"):
+                    root_inner = _inner_html(root)
+                    if root_inner:
+                        root_children = [
+                            c
+                            for c in list(root)
+                            if isinstance(getattr(c, "tag", None), str)
+                        ]
+                        has_non_table_root_child = any(
+                            (c.tag or "").lower() != "table" for c in root_children
+                        )
+                        starts_with_table = root_inner.lstrip().lower().startswith("<table")
+                        if not (starts_with_table and has_non_table_root_child):
+                            xp = root_inner
+    except Exception:
+        pass
+
     if xp and len(xp) > 200:
         return xp, ("xpath", xpath), full_html
 
