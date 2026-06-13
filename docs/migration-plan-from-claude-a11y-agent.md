@@ -14,6 +14,23 @@ Gemini-A11y Agent v1.0 の実行環境（Google Colab + Google Sheets + Google D
 
 ---
 
+## 現在の進捗（更新）
+
+本計画のうち、v1.0 社内向け検証に必要な以下は実装・整備済み。
+
+| 項目 | 状態 | 備考 |
+|---|---|---|
+| README / docs 分離 | 完了 | READMEは社内利用者向け、詳細はdocsへ分離 |
+| 処理責務の整理 | 完了 | `docs/developer.md` に整理 |
+| old / ai / gold fixture 管理 | 完了 | `tests/fixtures/html/saga-city/` に配置 |
+| 回帰検証スクリプト | 完了 | `tools/regression_check_14256.py` |
+| fixture inventory確認 | 完了 | `tools/check_saga_city_fixture_inventory.py` |
+| 旧版AI出力比較 | 実装済み・旧版出力待ち | `tools/compare_saga_city_versions.py` |
+| 検証用合成fixture | 完了 | `tests/fixtures/html/saga-city-test/` |
+| 合成fixture workflow | 完了 | `docs/composite-fixture-workflow.md` |
+| ローカルHTML処理入口 | 実装済み・実行環境確認待ち | `process_extracted_html()` / `tools/run_saga_city_test_fixture_v1.py` |
+
+
 ## 参考リポジトリから取り込む考え方
 
 ### 1. Sheets をジョブ台帳として扱う
@@ -50,7 +67,7 @@ v1.0 時点では、既存列を壊さず、内部ログ・README・将来設計
 
 ## 段階的な改変計画
 
-### Phase 1：現行処理の責務整理
+### Phase 1：現行処理の責務整理【完了】
 
 - Colab起動、Sheets列、Drive保存先は維持
 - `extractor.py`
@@ -74,7 +91,7 @@ v1.0 時点では、既存列を壊さず、内部ログ・README・将来設計
 
 ---
 
-### Phase 2：old / ai / gold フォルダ設計
+### Phase 2：old / ai / gold フォルダ設計【完了】
 
 現行の出力先を大きく壊さず、以下のようなフォルダ設計を検討する。
 
@@ -96,7 +113,7 @@ HTML出力/
 
 ---
 
-### Phase 3：lxml ベースの回帰検証
+### Phase 3：lxml ベースの回帰検証【進行中】
 
 外部ネットワーク前提の `pip install` は禁止する。
 検証スクリプトは `bs4` を使わず `lxml` で実装する。
@@ -114,9 +131,12 @@ HTML出力/
 * table caption が存在すること
 * Menu / PageTop / footer など共通部品が混入していないこと
 
+現状では、14256実ページfixtureの検証スクリプトは整備済み。
+ただし、合成fixtureの `ai-v0` / `ai-v1.0` 実出力はまだ未配置であり、`lxml` がある環境での実DOM検証は実行環境依存で未完了の場合がある。
+
 ---
 
-### Phase 4：README / docs の分離
+### Phase 4：README / docs の分離【完了】
 
 README は社内利用者向けに簡潔化し、詳細は docs に分離する。
 
@@ -148,6 +168,54 @@ docs に分離する内容：
 
 ---
 
+### Phase 5：合成fixtureによる精度比較【次に実施】
+
+old/gold差分から作成した `saga-city-test` 合成fixtureを使い、旧版AI出力とv1.0出力の精度を比較する。
+
+対象：
+
+```text
+tests/fixtures/html/saga-city-test/
+  old/sg02395-composite.html
+  ai-v0/sg02395-composite.html
+  ai-v1.0/sg02395-composite.html
+  gold/sg02395-composite.html
+```
+
+現状：
+
+* `old/sg02395-composite.html` は作成済み
+* `gold/sg02395-composite.html` は作成済み
+* `ai-v0/sg02395-composite.html` は未配置
+* `ai-v1.0/sg02395-composite.html` は未配置
+
+次の作業：
+
+1. 旧版Gemini-A11y Agentで `old/sg02395-composite.html` を処理し、`ai-v0/sg02395-composite.html` に配置する
+2. v1.0 Gemini-A11y Agentで `old/sg02395-composite.html` を処理し、`ai-v1.0/sg02395-composite.html` に配置する
+3. 以下を実行して比較する
+
+```bash
+python tools/check_saga_city_test_fixture.py
+python tools/compare_saga_city_versions.py \
+  --fixture-root tests/fixtures/html/saga-city-test \
+  --case sg02395-composite
+```
+
+判定観点：
+
+* 導入文欠落が改善しているか
+* h3/h4 欠落が改善しているか
+* table構造補正が gold に近づいているか
+* 共通部品混入が増えていないか
+* `rgb（` や caption id 重複などの warning が増えていないか
+
+関連手順：
+
+- [`docs/composite-fixture-workflow.md`](composite-fixture-workflow.md)
+
+---
+
 ## 今回は取り込まないもの
 
 以下は現時点では取り込まない。
@@ -167,6 +235,18 @@ docs に分離する内容：
 * 現行の実行環境を変えないため
 * v1.0 は社内向けリリースとして、まず処理品質と回帰検証を安定させるため
 * 実行基盤の変更は、処理ロジックが安定してから別フェーズで検討するため
+
+現時点では、合成fixtureのローカル処理入口を追加したが、これは通常のColab / Sheets / Drive運用を置き換えるものではない。
+
+引き続き以下は導入しない。
+
+- Cloud Run
+- Web管理画面
+- Secret Manager
+- Cloud Scheduler
+- 本格的な承認UI
+
+これらは、合成fixtureによる精度比較と、v1.0出力の安定確認が完了した後に検討する。
 
 ---
 
@@ -189,3 +269,10 @@ docs に分離する内容：
 * 検証できること
 * 人が確認できる成果物構造に近づけること
 * 将来 Cloud Run / Web UI に移行できる責務分離を進めること
+
+追加判断基準：
+
+- 実ページfixtureだけでなく、合成fixtureでも欠落・構造崩れを検出できること
+- 旧版AI出力とv1.0出力を比較できること
+- `ai-v0` / `ai-v1.0` / `gold` の差分から、改善・退行・warningを説明できること
+- 通常のColab / Sheets / Drive運用に副作用を出さないこと
