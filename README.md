@@ -69,3 +69,9 @@
 ## 開発メモ（重要）
 - chunker 検証用スクリプトは bs4 を使わず lxml で実装すること
 - 外部ネットワーク前提の `pip install` は禁止
+
+---
+
+## ドキュメント
+
+- claude-a11y-agent 設計思想の段階的取り込み計画: [`docs/migration-plan-from-claude-a11y-agent.md`](docs/migration-plan-from-claude-a11y-agent.md)
