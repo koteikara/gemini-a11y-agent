@@ -71,18 +71,45 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Compare Saga City ai-v0, ai-v1.0, and gold HTML fixtures."
     )
-    parser.add_argument("--previous", type=Path, default=DEFAULT_PREVIOUS)
+    parser.add_argument(
+        "--fixture-root",
+        type=Path,
+        default=SAGA_ROOT,
+        help="Fixture root containing ai-v0, ai-v1.0, ai, and gold directories.",
+    )
+    parser.add_argument(
+        "--case",
+        default=None,
+        help="Case basename to compare, for example sg02395-composite.",
+    )
+    parser.add_argument("--previous", type=Path, default=None)
     parser.add_argument("--current", type=Path, default=None)
-    parser.add_argument("--gold", type=Path, default=DEFAULT_GOLD)
+    parser.add_argument("--gold", type=Path, default=None)
     return parser.parse_args()
 
 
-def resolve_current_dir(raw_current: Path | None) -> Path:
+def resolve_current_dir(fixture_root: Path, raw_current: Path | None) -> Path:
     if raw_current is not None:
         return raw_current
-    if DEFAULT_CURRENT.exists():
-        return DEFAULT_CURRENT
-    return FALLBACK_CURRENT
+    current = fixture_root / "ai-v1.0"
+    if current.exists():
+        return current
+    fallback = fixture_root / "ai"
+    return fallback
+
+
+def build_cases(case_name: str | None) -> list[dict[str, str]]:
+    if case_name is None:
+        return CASES
+    filename = f"{case_name}.html"
+    return [
+        {
+            "name": case_name,
+            "previous": filename,
+            "current": filename,
+            "gold": filename,
+        }
+    ]
 
 
 def read_text(path: Path) -> str | None:
@@ -209,16 +236,20 @@ def print_row(name: str, previous: str, current: str, gold: str, result: str) ->
 
 def main() -> int:
     args = parse_args()
-    current_dir = resolve_current_dir(args.current)
+    fixture_root = args.fixture_root
+    previous_dir = args.previous or fixture_root / "ai-v0"
+    current_dir = resolve_current_dir(fixture_root, args.current)
+    gold_dir = args.gold or fixture_root / "gold"
+    cases = build_cases(args.case)
 
     summary = Counter()
     had_regression = False
     had_missing_previous = False
 
-    for case in CASES:
-        prev = collect_metrics(args.previous / case["previous"])
+    for case in cases:
+        prev = collect_metrics(previous_dir / case["previous"])
         cur = collect_metrics(current_dir / case["current"])
-        gold = collect_metrics(args.gold / case["gold"])
+        gold = collect_metrics(gold_dir / case["gold"])
 
         print(f"== {case['name']} version comparison ==")
         print(f"previous: {prev.path}")
@@ -228,11 +259,13 @@ def main() -> int:
             had_missing_previous = True
             print(f"[WARNING] previous fixture not found: {prev.path}")
         if not cur.exists:
-            print(f"[ERROR] current fixture not found: {cur.path}")
-            return 1
+            print(f"[WARNING] current fixture not found: {cur.path}")
         if not gold.exists:
             print(f"[ERROR] gold fixture not found: {gold.path}")
             return 1
+        if not cur.exists:
+            print()
+            continue
         print()
         print(f"{'Metric':<31} {'previous':>9}   {'current':>7}   {'gold':>5}   result")
 

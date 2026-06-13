@@ -1,0 +1,57 @@
+{
+  "fixture": "saga-city-test",
+  "source": {
+    "old": "tests/fixtures/html/saga-city/old/sg02395.html",
+    "gold": "tests/fixtures/html/saga-city/gold/sg02395.html"
+  },
+  "composite": {
+    "old": "tests/fixtures/html/saga-city-test/old/sg02395-composite.html",
+    "gold": "tests/fixtures/html/saga-city-test/gold/sg02395-composite.html"
+  },
+  "cases": [
+    {
+      "id": "intro_preservation",
+      "description": "table前導入文がAI処理で欠落しないこと",
+      "required_texts": [
+        "休日（日曜日または祝日）在宅当番医について",
+        "日曜・祝日在宅当番医情報",
+        "診療時間"
+      ]
+    },
+    {
+      "id": "update_line_removed",
+      "description": "更新行がgoldでは除外されること",
+      "old_contains": ["更新："],
+      "gold_not_contains": ["更新："]
+    },
+    {
+      "id": "heading_preservation",
+      "description": "h3/h4が保持されること",
+      "expected_gold_patterns": ["<h3", "<h4"]
+    },
+    {
+      "id": "table_header_scope",
+      "description": "データテーブルのthead/th/scopeが補正されること",
+      "expected_gold_patterns": [
+        "<thead",
+        "scope=\"col\"",
+        "scope=\"row\"",
+        "<caption"
+      ]
+    },
+    {
+      "id": "common_component_trim",
+      "description": "Menu/PageTop/footer相当の共通部品がgoldで除外されること。元fixtureに存在しなかったためcompositeには含めない。",
+      "source_presence": {
+        "Menu": false,
+        "PageTop": false,
+        "footer": false
+      }
+    }
+  ],
+  "known_warnings": [
+    "rgb_fullwidth",
+    "caption_id_duplicates",
+    "caption_id_prefix"
+  ]
+}
