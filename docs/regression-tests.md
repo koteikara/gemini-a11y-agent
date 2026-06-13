@@ -88,6 +88,12 @@ python tools/regression_check_14256.py tests/fixtures/html/saga-city/ai
 python tools/regression_check_14256.py tests/fixtures/html/saga-city/gold
 ```
 
+このチェッカーは佐賀市14256相当ページ専用です。
+ディレクトリを指定した場合、以下のみを検証対象とし、それ以外のHTMLは SKIP します。
+
+- `tests/fixtures/html/saga-city/ai/sg02395_0820.html`
+- `tests/fixtures/html/saga-city/gold/sg02395.html`
+
 `old/` は補正前HTMLのため、通常の必須検証対象にはしません。
 
 Codex等の実行環境に `lxml` が無い場合、実HTML検証は実行できません。

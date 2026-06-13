@@ -4,6 +4,8 @@
 This script validates the v1.0 baseline page described in
 ``docs/regression-tests.md`` using lxml-based DOM inspection only.
 It performs no network access and does not install dependencies.
+Directory inputs are supported, but this checker only validates the Saga City
+14256 equivalent fixtures and skips other HTML files.
 
 Example fixture inputs for the Saga City 14256 equivalent page:
     python tools/regression_check_14256.py tests/fixtures/html/saga-city/ai/sg02395_0820.html
@@ -36,6 +38,11 @@ RGB_WARNING_TEXT = "rgb（"
 EXPECTED_CAPTION_TEXT = "令和8年2月11日（水曜日）一覧"
 FALLBACK_CAPTION_TEXT = "2月11日"
 REQUIRED_HEADER_TEXTS = ("診療科", "医療機関名", "電話", "所在地", "特定健診")
+TARGET_FIXTURE_NAMES = {
+    "ai": {"sg02395_0820.html", "14256.html"},
+    "gold": {"sg02395.html", "14256.html"},
+}
+SKIP_NON_TARGET_MESSAGE = "佐賀市14256相当ではないため、このチェッカーでは検証しません"
 
 
 @dataclass(frozen=True)
@@ -232,6 +239,17 @@ def is_old_fixture_path(path: Path) -> bool:
     return "old" in path.parts
 
 
+def is_saga_14256_fixture(path: Path) -> bool:
+    normalized = path.as_posix()
+    if normalized.endswith("/ai/sg02395_0820.html") or normalized.endswith("/gold/sg02395.html"):
+        return True
+
+    for directory_name, fixture_names in TARGET_FIXTURE_NAMES.items():
+        if path.name in fixture_names and directory_name in path.parts:
+            return True
+    return path.name == "14256.html"
+
+
 def discover_html_files(input_path: Path) -> list[Path]:
     if input_path.is_dir():
         return sorted(input_path.rglob("*.html"), key=lambda path: path.as_posix())
@@ -252,7 +270,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "html_path",
         type=Path,
         help=(
-            "Path to the generated/local 14256 HTML file or a directory containing HTML files "
+            "Path to the generated/local 14256 HTML file or a directory containing fixture HTML files; non-14256 files are skipped "
             "(e.g. tests/fixtures/html/saga-city/ai/sg02395_0820.html, "
             "tests/fixtures/html/saga-city/gold/sg02395.html, or tests/fixtures/html/saga-city/ai)"
         ),
@@ -278,12 +296,14 @@ def check_file(html_path: Path, html: Any, parser_error: type[Exception]) -> lis
     return [*results, *run_checks(root, raw_html)]
 
 
-def print_summary(file_count: int, passed: int, failed: int, warnings: int) -> None:
+def print_summary(file_count: int, checked: int, passed: int, failed: int, warnings: int, skipped: int) -> None:
     print("\n== Summary ==")
     print(f"files: {file_count}")
+    print(f"checked: {checked}")
     print(f"passed: {passed}")
     print(f"failed: {failed}")
     print(f"warnings: {warnings}")
+    print(f"skipped: {skipped}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -302,11 +322,13 @@ def main(argv: list[str] | None = None) -> int:
     if not html_paths:
         print(f"[FAIL] 対象 HTML が見つかりません: {input_path}", file=sys.stderr)
         if is_directory_run:
-            print_summary(0, 0, 0, 0)
+            print_summary(0, 0, 0, 0, 0, 0)
         return 1
 
     failed_files = 0
     passed_files = 0
+    checked_files = 0
+    skipped_files = 0
     warning_count = 0
 
     for index, html_path in enumerate(html_paths):
@@ -315,6 +337,13 @@ def main(argv: list[str] | None = None) -> int:
                 print()
             print(f"== {html_path} ==")
 
+        if is_directory_run and not is_saga_14256_fixture(html_path):
+            results = [CheckResult("SKIP", SKIP_NON_TARGET_MESSAGE)]
+            skipped_files += 1
+            print_results(results)
+            continue
+
+        checked_files += 1
         results = check_file(html_path, html, ParserError)
         print_results(results)
 
@@ -326,9 +355,9 @@ def main(argv: list[str] | None = None) -> int:
         warning_count += sum(1 for result in results if result.level == "WARNING")
 
     if is_directory_run:
-        print_summary(len(html_paths), passed_files, failed_files, warning_count)
+        print_summary(len(html_paths), checked_files, passed_files, failed_files, warning_count, skipped_files)
 
-    return 1 if failed_files else 0
+    return 1 if failed_files or checked_files == 0 else 0
 
 
 if __name__ == "__main__":
