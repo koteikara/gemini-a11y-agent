@@ -24,6 +24,9 @@ REQUIRED_TEXTS = (
 )
 COMMON_COMPONENT_TEXTS = ("Menu", "PageTop")
 RGB_WARNING_TEXT = "rgb（"
+EXPECTED_CAPTION_TEXT = "令和8年2月11日（水曜日）一覧"
+FALLBACK_CAPTION_TEXT = "2月11日"
+REQUIRED_HEADER_TEXTS = ("診療科", "医療機関名", "電話", "所在地", "特定健診")
 
 
 @dataclass(frozen=True)
@@ -60,11 +63,42 @@ def has_text_starting_with(root: Any, prefix: str) -> bool:
     return False
 
 
+def table_caption_text(table: Any) -> str:
+    return normalize_space(" ".join(table.xpath(".//caption//text()")))
+
+
+def table_header_text(table: Any) -> str:
+    return normalize_space(" ".join(table.xpath(".//thead//text() | .//th//text()")))
+
+
+def table_has_required_headers(table: Any) -> bool:
+    header_text = table_header_text(table)
+    return all(required in header_text for required in REQUIRED_HEADER_TEXTS)
+
+
+def table_has_target_caption(table: Any) -> bool:
+    caption_text = table_caption_text(table)
+    return EXPECTED_CAPTION_TEXT in caption_text or FALLBACK_CAPTION_TEXT in caption_text
+
+
 def find_duty_table(root: Any) -> Any | None:
+    all_tables = root.xpath("//table")
+
+    for table in all_tables:
+        if EXPECTED_CAPTION_TEXT in table_caption_text(table):
+            return table
+
+    for table in all_tables:
+        if FALLBACK_CAPTION_TEXT in table_caption_text(table) and table_has_required_headers(table):
+            return table
+
+    for table in all_tables:
+        if table_has_required_headers(table):
+            return table
+
     tables = root.xpath("//table[.//caption or .//thead or .//th]")
     if tables:
         return tables[0]
-    all_tables = root.xpath("//table")
     return all_tables[0] if all_tables else None
 
 
@@ -141,6 +175,19 @@ def run_checks(root: Any, raw_html: str) -> list[CheckResult]:
             fail_detail='tbody/tr[position() >= 2] の先頭セルが th scope="row" ではありません',
         )
         required(bool(table.xpath(".//caption")), "caption が存在する")
+        required(
+            table_has_target_caption(table),
+            "当番医テーブルの caption に対象日が含まれる",
+            ok_detail=f"caption: {table_caption_text(table)}",
+            fail_detail=f"caption に {EXPECTED_CAPTION_TEXT} または {FALLBACK_CAPTION_TEXT} が含まれません: {table_caption_text(table)}",
+        )
+        missing_headers = [required_header for required_header in REQUIRED_HEADER_TEXTS if required_header not in table_header_text(table)]
+        required(
+            not missing_headers,
+            "当番医テーブルの header text に必須項目がすべて含まれる",
+            ok_detail="必須 header: " + ", ".join(REQUIRED_HEADER_TEXTS),
+            fail_detail="不足 header: " + ", ".join(missing_headers),
+        )
 
     common_text_matches = [text for text in COMMON_COMPONENT_TEXTS if text in full_text]
     footer_elements = root.xpath("//footer")
