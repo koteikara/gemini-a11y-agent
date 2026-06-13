@@ -53,3 +53,25 @@ python tools/compare_saga_city_versions.py \
 - `warning` は既知副作用か、新規副作用かを確認します。
 - `improved` が導入文・h3/h4・table構造で出ているか確認します。
 - `status: PASS` または warningのみなら社内v1.0確認材料とします。
+
+## v1.0出力の生成
+
+合成fixtureの old HTML を現行 v1.0 処理に流す場合は、以下を実行します。
+
+```bash
+python tools/run_saga_city_test_fixture_v1.py
+```
+
+既存の `ai-v1.0/sg02395-composite.html` を上書きする場合は、明示的に `--overwrite` を付けます。
+
+```bash
+python tools/run_saga_city_test_fixture_v1.py --overwrite
+```
+
+出力を書き込まず確認する場合は、`--dry-run` を使います。
+
+```bash
+python tools/run_saga_city_test_fixture_v1.py --dry-run
+```
+
+このスクリプトは通常のSheets/Drive運用を置き換えるものではなく、合成fixtureをv1.0処理へ通すための補助入口です。
