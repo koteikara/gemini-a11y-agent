@@ -4,6 +4,13 @@
 This script validates the v1.0 baseline page described in
 ``docs/regression-tests.md`` using lxml-based DOM inspection only.
 It performs no network access and does not install dependencies.
+
+Example fixture inputs for the Saga City 14256 equivalent page:
+    python tools/regression_check_14256.py tests/fixtures/html/saga-city/ai/sg02395_0820.html
+    python tools/regression_check_14256.py tests/fixtures/html/saga-city/gold/sg02395.html
+
+The old fixture is pre-correction HTML and is not a required validation
+target for this script.
 """
 
 from __future__ import annotations
@@ -221,7 +228,15 @@ def print_results(results: Iterable[CheckResult]) -> None:
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run lxml regression checks for Saga City 14256 HTML.")
-    parser.add_argument("html_file", type=Path, help="Path to the generated/local 14256 HTML file")
+    parser.add_argument(
+        "html_file",
+        type=Path,
+        help=(
+            "Path to the generated/local 14256 HTML file "
+            "(e.g. tests/fixtures/html/saga-city/ai/sg02395_0820.html or "
+            "tests/fixtures/html/saga-city/gold/sg02395.html)"
+        ),
+    )
     return parser.parse_args(argv)
 
 

@@ -60,6 +60,14 @@
 
 回帰確認項目は、今後の自治体ページ追加に応じて増やします。最初は佐賀市 休日在宅当番医を基準にし、同様の table 構造を持つページを追加して、table header row / col / none 判定の安全性を継続確認します。
 
+## Fixture の場所
+
+佐賀市 HTML fixture は `tests/fixtures/html/saga-city/` 配下に配置しています。
+
+- `old/`: 補正前 HTML。回帰差分の参照用であり、必須検証の対象外です。
+- `ai/`: AI 補正後 HTML。佐賀市 14256 相当の fixture は `tests/fixtures/html/saga-city/ai/sg02395_0820.html` です。
+- `gold/`: 期待 HTML。佐賀市 14256 相当の fixture は `tests/fixtures/html/saga-city/gold/sg02395.html` です。
+
 ## 実行例
 
 佐賀市 14256 の処理後 HTML をローカルファイルとして用意し、以下を実行します。
@@ -67,7 +75,11 @@
 
 ```bash
 python tools/regression_check_14256.py ./14256.html
+python tools/regression_check_14256.py tests/fixtures/html/saga-city/ai/sg02395_0820.html
+python tools/regression_check_14256.py tests/fixtures/html/saga-city/gold/sg02395.html
 ```
+
+`old/` は補正前 HTML のため、必須検証の対象外です。
 
 必須検証に失敗した場合は exit code 1 を返します。
 `rgb（` や `caption id` 重複は v1.0 既知事項のため warning として扱い、warning のみの場合は exit code 0 を返します。
