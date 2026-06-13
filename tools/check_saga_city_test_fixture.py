@@ -15,6 +15,8 @@ FIXTURE_ROOT = ROOT / "tests" / "fixtures" / "html" / "saga-city-test"
 OLD_HTML = FIXTURE_ROOT / "old" / "sg02395-composite.html"
 GOLD_HTML = FIXTURE_ROOT / "gold" / "sg02395-composite.html"
 MANIFEST = FIXTURE_ROOT / "manifest.json"
+AI_V0_HTML = FIXTURE_ROOT / "ai-v0" / "sg02395-composite.html"
+AI_V1_HTML = FIXTURE_ROOT / "ai-v1.0" / "sg02395-composite.html"
 INTRO_TEXTS = [
     "休日（日曜日または祝日）在宅当番医について",
     "日曜・祝日在宅当番医情報",
@@ -35,7 +37,13 @@ def main() -> int:
         if not path.exists():
             errors.append(f"missing required file: {path}")
 
+    for label, path in (("ai-v0", AI_V0_HTML), ("ai-v1.0", AI_V1_HTML)):
+        if not path.exists():
+            warnings.append(f"{label} output not placed: {path}")
+
     if errors:
+        for warning in warnings:
+            print(f"[WARNING] {warning}")
         for error in errors:
             print(f"[ERROR] {error}")
         return 1

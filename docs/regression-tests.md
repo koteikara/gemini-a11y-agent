@@ -139,6 +139,10 @@ tests/fixtures/html/saga-city-test/
 
 このfixtureは、実在ページそのものではなく、導入文保持、更新行除外、h3/h4保持、table構造補正などを1つのHTMLで検証するための合成HTMLです。
 
+詳細な運用手順は以下を参照してください。
+
+- [`docs/composite-fixture-workflow.md`](composite-fixture-workflow.md)
+
 確認コマンド：
 
 ```bash
