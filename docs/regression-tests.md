@@ -81,6 +81,17 @@ python tools/regression_check_14256.py tests/fixtures/html/saga-city/gold/sg0239
 
 `old/` は補正前 HTML のため、必須検証の対象外です。
 
+## fixtureインベントリ確認
+
+old / ai / gold の件数や、佐賀市14256相当ファイルの存在確認は以下で行います。
+
+```bash
+python tools/check_saga_city_fixture_inventory.py
+```
+
+このスクリプトは標準ライブラリのみで動作し、lxml は不要です。
+HTML構造の検証ではなく、fixture配置・件数・代表ファイルの存在確認を目的とします。
+
 ## fixtureディレクトリ一括検証
 
 ```bash
