@@ -8,9 +8,11 @@ It performs no network access and does not install dependencies.
 Example fixture inputs for the Saga City 14256 equivalent page:
     python tools/regression_check_14256.py tests/fixtures/html/saga-city/ai/sg02395_0820.html
     python tools/regression_check_14256.py tests/fixtures/html/saga-city/gold/sg02395.html
+    python tools/regression_check_14256.py tests/fixtures/html/saga-city/ai
+    python tools/regression_check_14256.py tests/fixtures/html/saga-city/gold
 
 The old fixture is pre-correction HTML and is not a required validation
-target for this script.
+target for this script. Passing old/ is allowed, but emits a warning.
 """
 
 from __future__ import annotations
@@ -226,45 +228,107 @@ def print_results(results: Iterable[CheckResult]) -> None:
         print(f"[{result.level}] {result.name}{suffix}")
 
 
+def is_old_fixture_path(path: Path) -> bool:
+    return "old" in path.parts
+
+
+def discover_html_files(input_path: Path) -> list[Path]:
+    if input_path.is_dir():
+        return sorted(input_path.rglob("*.html"), key=lambda path: path.as_posix())
+    return [input_path]
+
+
+def lxml_import_failure_message(exc: ModuleNotFoundError) -> str:
+    return (
+        f"[FAIL] lxml を import できません: {exc}\n"
+        "この検証スクリプトは lxml 前提です。外部ネットワーク前提の pip install は行わず、"
+        "lxml が利用可能な実行環境で実行してください。"
+    )
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run lxml regression checks for Saga City 14256 HTML.")
     parser.add_argument(
-        "html_file",
+        "html_path",
         type=Path,
         help=(
-            "Path to the generated/local 14256 HTML file "
-            "(e.g. tests/fixtures/html/saga-city/ai/sg02395_0820.html or "
-            "tests/fixtures/html/saga-city/gold/sg02395.html)"
+            "Path to the generated/local 14256 HTML file or a directory containing HTML files "
+            "(e.g. tests/fixtures/html/saga-city/ai/sg02395_0820.html, "
+            "tests/fixtures/html/saga-city/gold/sg02395.html, or tests/fixtures/html/saga-city/ai)"
         ),
     )
     return parser.parse_args(argv)
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = parse_args(sys.argv[1:] if argv is None else argv)
-    html_path = args.html_file
+def check_file(html_path: Path, html: Any, parser_error: type[Exception]) -> list[CheckResult]:
+    results: list[CheckResult] = []
+    if is_old_fixture_path(html_path):
+        results.append(CheckResult("WARNING", "old/ fixture が指定されています", "old/ は補正前 HTML のため通常の必須検証対象外です"))
+
     try:
         raw_html = html_path.read_text(encoding="utf-8")
     except OSError as exc:
-        print(f"[FAIL] HTMLファイルを読み込めません: {exc}", file=sys.stderr)
-        return 1
+        return [*results, CheckResult("FAIL", "HTMLファイルを読み込めません", str(exc))]
+
+    try:
+        root = html.fromstring(raw_html)
+    except (parser_error, ValueError) as exc:
+        return [*results, CheckResult("FAIL", "HTMLをパースできません", str(exc))]
+
+    return [*results, *run_checks(root, raw_html)]
+
+
+def print_summary(file_count: int, passed: int, failed: int, warnings: int) -> None:
+    print("\n== Summary ==")
+    print(f"files: {file_count}")
+    print(f"passed: {passed}")
+    print(f"failed: {failed}")
+    print(f"warnings: {warnings}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(sys.argv[1:] if argv is None else argv)
+    input_path = args.html_path
 
     try:
         from lxml import html
         from lxml.etree import ParserError
     except ModuleNotFoundError as exc:
-        print(f"[FAIL] lxml を import できません: {exc}", file=sys.stderr)
+        print(lxml_import_failure_message(exc), file=sys.stderr)
         return 1
 
-    try:
-        root = html.fromstring(raw_html)
-    except (ParserError, ValueError) as exc:
-        print(f"[FAIL] HTMLをパースできません: {exc}", file=sys.stderr)
+    html_paths = discover_html_files(input_path)
+    is_directory_run = input_path.is_dir()
+    if not html_paths:
+        print(f"[FAIL] 対象 HTML が見つかりません: {input_path}", file=sys.stderr)
+        if is_directory_run:
+            print_summary(0, 0, 0, 0)
         return 1
 
-    results = run_checks(root, raw_html)
-    print_results(results)
-    return 1 if any(result.level == "FAIL" for result in results) else 0
+    failed_files = 0
+    passed_files = 0
+    warning_count = 0
+
+    for index, html_path in enumerate(html_paths):
+        if is_directory_run:
+            if index > 0:
+                print()
+            print(f"== {html_path} ==")
+
+        results = check_file(html_path, html, ParserError)
+        print_results(results)
+
+        has_failure = any(result.level == "FAIL" for result in results)
+        if has_failure:
+            failed_files += 1
+        else:
+            passed_files += 1
+        warning_count += sum(1 for result in results if result.level == "WARNING")
+
+    if is_directory_run:
+        print_summary(len(html_paths), passed_files, failed_files, warning_count)
+
+    return 1 if failed_files else 0
 
 
 if __name__ == "__main__":

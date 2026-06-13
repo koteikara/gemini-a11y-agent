@@ -77,4 +77,5 @@
 - claude-a11y-agent 設計思想の段階的取り込み計画: [`docs/migration-plan-from-claude-a11y-agent.md`](docs/migration-plan-from-claude-a11y-agent.md)
 - 開発者向け詳細: [`docs/developer.md`](docs/developer.md)
 - 回帰検証手順: [`docs/regression-tests.md`](docs/regression-tests.md)
+- 佐賀市 fixture HTML: [`tests/fixtures/html/saga-city/`](tests/fixtures/html/saga-city/)
 - 既知事項と次期対応候補: [`docs/known-issues.md`](docs/known-issues.md)

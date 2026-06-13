@@ -81,5 +81,17 @@ python tools/regression_check_14256.py tests/fixtures/html/saga-city/gold/sg0239
 
 `old/` は補正前 HTML のため、必須検証の対象外です。
 
+## fixtureディレクトリ一括検証
+
+```bash
+python tools/regression_check_14256.py tests/fixtures/html/saga-city/ai
+python tools/regression_check_14256.py tests/fixtures/html/saga-city/gold
+```
+
+`old/` は補正前HTMLのため、通常の必須検証対象にはしません。
+
+Codex等の実行環境に `lxml` が無い場合、実HTML検証は実行できません。
+外部ネットワーク前提の `pip install` は行わず、`lxml` が利用可能な環境で実行してください。
+
 必須検証に失敗した場合は exit code 1 を返します。
 `rgb（` や `caption id` 重複は v1.0 既知事項のため warning として扱い、warning のみの場合は exit code 0 を返します。
