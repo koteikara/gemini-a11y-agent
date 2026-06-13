@@ -128,3 +128,24 @@ python tools/compare_saga_city_versions.py
 ```
 
 この比較は、旧版AI出力・v1.0 AI出力・gold を比較し、導入文保持、h3/h4、table構造、scope、共通部品混入、既知副作用を確認します。
+
+## 検証用合成fixture
+
+実在ページ由来のfixtureとは別に、old/gold差分から修正ケースを集約した検証用fixtureを管理します。
+
+```text
+tests/fixtures/html/saga-city-test/
+```
+
+このfixtureは、実在ページそのものではなく、導入文保持、更新行除外、h3/h4保持、table構造補正などを1つのHTMLで検証するための合成HTMLです。
+
+確認コマンド：
+
+```bash
+python tools/check_saga_city_test_fixture.py
+python tools/compare_saga_city_versions.py \
+  --fixture-root tests/fixtures/html/saga-city-test \
+  --case sg02395-composite
+```
+
+今後、検証専用HTMLは `*-test` 形式のfixtureディレクトリに追加します。
