@@ -7,9 +7,18 @@ import requests
 import re
 from collections import defaultdict
 
-import gspread
-from google.colab import userdata
-from google import genai
+try:
+    import gspread
+except ImportError:  # pragma: no cover - optional outside Colab/Sheets runtime
+    gspread = None
+try:
+    from google.colab import userdata
+except ImportError:  # pragma: no cover - optional outside Colab runtime
+    userdata = None
+try:
+    from google import genai
+except ImportError:  # pragma: no cover - optional outside Gemini runtime
+    genai = None
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
@@ -193,6 +202,246 @@ def print_page_summary(
     print(f"\n✅ 成功: {filename}")
     print(f"   - 保存: {out_path}")
     print(f"   - トークン(total): {total_tokens} / コスト: ¥{jpy_cost}")
+
+
+def process_extracted_html(
+    extracted_html: str,
+    client,
+    *,
+    base_url: str = "",
+    sleep_between_blocks: bool = True,
+) -> dict:
+    """Process an already-available HTML string through the v1.0 transform flow.
+
+    This helper intentionally skips URL fetch, Sheets updates, Drive writes,
+    Vision alt generation, and other external-network side effects. It keeps
+    the same block-level processing used by ``process_page``: structural
+    chunking, pre_clean, table-only LLM replacement with validation/fallback,
+    optional text normalization, end-trim suppression checks, post-merge layout
+    table fix, absolutization, and final cleanup.
+    """
+    page_dropped_blocks = 0
+    page_trim_applied = False
+    page_trim_reason = None
+
+    chunks = structural_chunk(extracted_html, MAX_CHUNK_CHARS)
+    print(f"  📦 分割: {len(chunks)} ブロック")
+
+    page_step_tokens = defaultdict(int)
+    page_step_calls = defaultdict(int)
+    final_blocks = []
+    table_intro_lookahead = 2
+
+    for b, raw_ch in enumerate(chunks, start=1):
+        if page_trim_applied:
+            page_dropped_blocks += 1
+            continue
+
+        intro_table_compound = _has_intro_text_with_table(raw_ch)
+        raw_len = len(raw_ch)
+        raw_text = extract_text_for_block(raw_ch)
+
+        if ENABLE_BLOCK_LEVEL_END_TRIM and is_end_trim_trigger(raw_text):
+            if intro_table_compound:
+                print(f"  ⚠️ end-trim suppressed: intro+table compound block={b}")
+            else:
+                should_trim, intro_detected, table_ahead, suppress_reason = should_apply_end_trim(
+                    block_text=raw_text,
+                    current_blocks=[raw_ch],
+                    upcoming_blocks=chunks[b:b + table_intro_lookahead],
+                    has_accepted_content=bool(final_blocks),
+                    accepted_blocks=final_blocks,
+                )
+                if suppress_reason.startswith("protect_table_intro"):
+                    print(
+                        f"  ⚠️ end-trim suppressed: protect_table_intro "
+                        f"table_ahead={'Y' if table_ahead else 'N'} "
+                        f"intro_detected={'Y' if intro_detected else 'N'} "
+                        f"block={b}"
+                    )
+                elif should_trim:
+                    page_trim_applied = True
+                    page_trim_reason = f"end_trim_trigger(block={b})"
+                    dropped = len(chunks) - b + 1
+                    page_dropped_blocks += dropped
+                    print(
+                        f"  ✂️ end-trim triggered at block {b}:"
+                        f" reason={page_trim_reason} dropped_blocks={dropped}"
+                    )
+                    break
+                else:
+                    print(
+                        f"  ⚠️ end-trim marker ignored at block {b}:"
+                        " no accepted content block yet"
+                    )
+
+        if is_noise_block(raw_text) and not intro_table_compound:
+            page_dropped_blocks += 1
+            print(
+                f"  🗑️ noise block skipped: block={b}"
+                f" raw_len={raw_len} text='{raw_text[:60]}'"
+            )
+            continue
+
+        block_tokens = 0
+        step_tokens = defaultdict(int)
+        step_calls = defaultdict(int)
+
+        ch, meta1 = pre_clean(raw_ch, base_url=base_url, do_layout_table_convert=True)
+        pre_len = len(ch)
+
+        table_fix = False
+        try:
+            if "<table" in ch and chunk_has_data_table_like(ch):
+                soup_tables = BeautifulSoup(ch, "html.parser")
+                data_tables = [
+                    t for t in soup_tables.find_all("table")
+                    if chunk_has_data_table_like(str(t))
+                ]
+                for table_idx, tbl in enumerate(data_tables, start=1):
+                    table_key = _table_identity(tbl, table_idx)
+                    out, tok = call_llm(client, prompt_tables(str(tbl)))
+                    step_tokens["tables"] += tok
+                    step_calls["tables"] += 1
+                    block_tokens += tok
+
+                    if not out or len(out) < MIN_LLM_OUTPUT_CHARS:
+                        print(
+                            f"    ⚠️ LLM(tables) fallback keep-original:"
+                            f" block={b} table={table_key} reason=short_output"
+                        )
+                        continue
+
+                    table_outer_html, detail = parse_single_table_response(out)
+                    if table_outer_html is None:
+                        print(
+                            f"    ⚠️ LLM(tables) fallback keep-original:"
+                            f" block={b} table={table_key} reason=invalid_table_response"
+                            f" detail={format_table_response_detail(detail)}"
+                        )
+                        continue
+
+                    new_table = BeautifulSoup(table_outer_html, "html.parser").find("table")
+                    if new_table is None:
+                        print(
+                            f"    ⚠️ LLM(tables) fallback keep-original:"
+                            f" block={b} table={table_key} reason=invalid_table_response"
+                            f" detail=table_parse_failed_after_validation"
+                        )
+                        continue
+
+                    tbl.replace_with(new_table)
+                    table_fix = True
+
+                if table_fix:
+                    ch = str(soup_tables)
+        except Exception as ex:
+            print(f"    ⚠️ LLM(tables) exception block={b}: {str(ex)[:140]}")
+
+        text_norm = False
+        try:
+            if needs_text_normalize(ch):
+                out, tok = call_llm(client, prompt_text_normalize(ch))
+                step_tokens["text_normalize"] += tok
+                step_calls["text_normalize"] += 1
+                block_tokens += tok
+                if out and len(out) >= MIN_LLM_OUTPUT_CHARS:
+                    ch = out
+                    text_norm = True
+        except Exception as ex:
+            print(f"    ⚠️ LLM(text_normalize) exception block={b}: {str(ex)[:140]}")
+
+        ch, meta2 = pre_clean(ch, base_url=base_url, do_layout_table_convert=False)
+        post_len = len(ch)
+
+        protect_intro, _, table_ahead, keyword_hit = is_protect_table_intro(
+            current_blocks=[raw_ch],
+            upcoming_blocks=chunks[b:b + table_intro_lookahead],
+            lookahead=table_intro_lookahead,
+        )
+        force_accept = bool(protect_intro)
+        if force_accept:
+            print(
+                f"  ✅ force_accept intro block: idx={b} "
+                f"table_ahead={'Y' if table_ahead else 'N'} "
+                f"keyword_hit={keyword_hit or '-'}"
+            )
+
+        if (not ch or len(ch.strip()) < 20) and not force_accept:
+            page_dropped_blocks += 1
+            if raw_len < 50:
+                print(f"  ⚠️ empty-ish -> skipped (raw_len<50): block={b}")
+            else:
+                print(
+                    f"  ⚠️ empty-ish -> skipped (no raw fallback):"
+                    f" block={b} raw_len={raw_len}"
+                )
+            continue
+
+        final_blocks.append(ch if ch and ch.strip() else raw_ch)
+
+        extra = (
+            f"raw_len={raw_len},pre_len={pre_len},post_len={post_len},"
+            f"tables_before={meta1.get('tables_before', 0)},"
+            f"layout_conv={meta1.get('layout_converted', 0)},"
+            f"table_fix={'1' if table_fix else '0'},"
+            f"text_norm={'1' if text_norm else '0'}"
+        )
+        print(f"  ◽️ ブロック {b}/{len(chunks)} 変換中...")
+        print_block_log(b, block_tokens, step_tokens, step_calls, extra_msg=extra)
+
+        for k, v in step_tokens.items():
+            page_step_tokens[k] += v
+        for k, v in step_calls.items():
+            page_step_calls[k] += v
+
+        if sleep_between_blocks:
+            time.sleep(SLEEP_BETWEEN_BLOCKS)
+
+    final_html = "".join(final_blocks)
+
+    if CONVERT_LAYOUT_TABLES_TO_DIV and "<table" in final_html:
+        before = len(BeautifulSoup(final_html, "html.parser").find_all("table"))
+        final_html, tb, ta, conv = convert_layout_tables_to_div_preserve_dom(final_html)
+        after = len(BeautifulSoup(final_html, "html.parser").find_all("table"))
+        print(
+            f"  🧩 Layout table->div post-merge:"
+            f" tables_before={before}, tables_after={after}, converted={conv}"
+        )
+
+    final_html = absolutize_paths(final_html, base_url)
+    final_html, _ = pre_clean(final_html, base_url=base_url, do_layout_table_convert=False)
+
+    if DROP_COMMON_SELECTORS:
+        final_html = drop_common_blocks_by_selectors(final_html)
+
+    if TRIM_AFTER_MENU_PAGETOP and not page_trim_applied:
+        allow_trim, intro_detected, table_ahead, suppress_reason = should_apply_end_trim(
+            block_text="",
+            current_blocks=final_blocks[:1],
+            upcoming_blocks=final_blocks[1:1 + table_intro_lookahead],
+            has_accepted_content=bool(final_blocks),
+            accepted_blocks=final_blocks,
+            check_trigger=False,
+        )
+        if suppress_reason.startswith("protect_table_intro"):
+            print("  ⚠️ end-trim suppressed: protect_table_intro page_level=Y")
+        elif allow_trim:
+            final_html, trimmed = trim_after_menu_pagetop(final_html)
+            if trimmed:
+                page_trim_applied = True
+                page_trim_reason = "menu_pagetop_trim"
+
+    return {
+        "html": final_html,
+        "total_tokens": sum(page_step_tokens.values()),
+        "page_trim_applied": page_trim_applied,
+        "page_trim_reason": page_trim_reason,
+        "page_dropped_blocks": page_dropped_blocks,
+        "page_step_tokens": dict(page_step_tokens),
+        "page_step_calls": dict(page_step_calls),
+        "chunk_count": len(chunks),
+    }
 
 
 # ==============================================================================
@@ -627,6 +876,9 @@ def main():
     """エントリーポイント"""
 
     # Step 1: 認証
+    if gspread is None or genai is None or userdata is None:
+        raise RuntimeError("Google Colab / Sheets / Gemini dependencies are required for main().")
+
     creds, authed_email = authenticate()
     print(f"✅ 認証アカウント: {authed_email}")
 

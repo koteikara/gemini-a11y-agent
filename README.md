@@ -81,6 +81,7 @@
 - 検証用合成fixture: `tests/fixtures/html/saga-city-test/`
 - 合成fixture運用手順: [`docs/composite-fixture-workflow.md`](docs/composite-fixture-workflow.md)
 - 合成fixtureチェック: `python tools/check_saga_city_test_fixture.py`
+- 合成fixture v1.0出力生成: `python tools/run_saga_city_test_fixture_v1.py`
 - 旧版AI出力との精度比較: `python tools/compare_saga_city_versions.py`
 - Saga City fixture inventory: `tools/check_saga_city_fixture_inventory.py`
 - 既知事項と次期対応候補: [`docs/known-issues.md`](docs/known-issues.md)
