@@ -78,5 +78,6 @@
 - 開発者向け詳細: [`docs/developer.md`](docs/developer.md)
 - 回帰検証手順: [`docs/regression-tests.md`](docs/regression-tests.md)
 - 佐賀市 fixture HTML: [`tests/fixtures/html/saga-city/`](tests/fixtures/html/saga-city/)
+- 旧版AI出力との精度比較: `python tools/compare_saga_city_versions.py`
 - Saga City fixture inventory: `tools/check_saga_city_fixture_inventory.py`
 - 既知事項と次期対応候補: [`docs/known-issues.md`](docs/known-issues.md)
