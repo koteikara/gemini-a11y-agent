@@ -112,3 +112,19 @@ Codex等の実行環境に `lxml` が無い場合、実HTML検証は実行でき
 
 必須検証に失敗した場合は exit code 1 を返します。
 `rgb（` や `caption id` 重複は v1.0 既知事項のため warning として扱い、warning のみの場合は exit code 0 を返します。
+
+## 旧版AI出力との精度比較
+
+v1.0 が旧版より改善しているかを確認する場合は、旧版AI出力を以下に配置します。
+
+```text
+tests/fixtures/html/saga-city/ai-v0/
+```
+
+そのうえで以下を実行します。
+
+```bash
+python tools/compare_saga_city_versions.py
+```
+
+この比較は、旧版AI出力・v1.0 AI出力・gold を比較し、導入文保持、h3/h4、table構造、scope、共通部品混入、既知副作用を確認します。
