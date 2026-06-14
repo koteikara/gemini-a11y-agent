@@ -25,10 +25,10 @@ Gemini-A11y Agent v1.0 の実行環境（Google Colab + Google Sheets + Google D
 | old / ai / gold fixture 管理 | 完了 | `tests/fixtures/html/saga-city/` に配置 |
 | 回帰検証スクリプト | 完了 | `tools/regression_check_14256.py` |
 | fixture inventory確認 | 完了 | `tools/check_saga_city_fixture_inventory.py` |
-| 旧版AI出力比較 | 実装済み・旧版出力待ち | `tools/compare_saga_city_versions.py` |
+| 合成fixture比較 | 完了 | `ai-v0` は今後生成せず、`ai-v1.0` / `gold` 比較を基本にする |
 | 検証用合成fixture | 完了 | `tests/fixtures/html/saga-city-test/` |
 | 合成fixture workflow | 完了 | `docs/composite-fixture-workflow.md` |
-| ローカルHTML処理入口 | 実装済み・実行環境確認待ち | `process_extracted_html()` / `tools/run_saga_city_test_fixture_v1.py` |
+| ローカルHTML処理入口 | 実装済み | `process_extracted_html()` / `tools/run_saga_city_test_fixture_v1.py` |
 
 
 ## 参考リポジトリから取り込む考え方
@@ -168,35 +168,25 @@ docs に分離する内容：
 
 ---
 
-### Phase 5：合成fixtureによる精度比較【次に実施】
+### Phase 5：合成fixtureによる精度比較【完了】
 
-old/gold差分から作成した `saga-city-test` 合成fixtureを使い、旧版AI出力とv1.0出力の精度を比較する。
+old/gold差分から作成した `saga-city-test` 合成fixtureを使い、v1.0出力がgoldに一致するかを確認した。
 
-対象：
+当初は `ai-v0` を生成して previous / current / gold の三者比較を行う想定だったが、今後 `ai-v0` は生成しない方針とする。
 
-```text
-tests/fixtures/html/saga-city-test/
-  old/sg02395-composite.html
-  ai-v0/sg02395-composite.html
-  ai-v1.0/sg02395-composite.html
-  gold/sg02395-composite.html
-```
+旧版からの改善内容は、過去に確認済みの旧版課題と、`ai-v1.0` / `gold` の比較結果をもとに `docs/v1-improvements-from-legacy.md` に整理する。
 
-現状：
+Phase 5の現状は以下に更新する。
 
-* `old/sg02395-composite.html` は作成済み
-* `gold/sg02395-composite.html` は作成済み
-* `ai-v0/sg02395-composite.html` は未配置
-* `ai-v1.0/sg02395-composite.html` は配置済み
+- `old/sg02395-composite.html` は配置済み
+- `gold/sg02395-composite.html` は配置済み
+- `ai-v1.0/sg02395-composite.html` は配置済み
+- `ai-v0/sg02395-composite.html` は今後生成しない
 
 v1.0出力はColab実運用環境で生成済み。
 `tools/compare_saga_city_versions.py` による current vs gold 比較では、18項目すべてが gold と一致し、`differs_from_gold: 0`、`regressed: 0`、`warning: 0` を確認済み。
-ただし `ai-v0` が未配置のため、旧版AI出力との差分比較は未完了。
 
-次の作業：
-
-1. 旧版Gemini-A11y Agentで `old/sg02395-composite.html` を処理し、`ai-v0/sg02395-composite.html` に配置する
-2. 旧版AI出力を配置後、以下を実行して previous / current / gold を比較する
+今後の確認コマンド：
 
 ```bash
 python tools/check_saga_city_test_fixture.py
@@ -205,17 +195,12 @@ python tools/compare_saga_city_versions.py \
   --case sg02395-composite
 ```
 
-判定観点：
-
-* 導入文欠落が改善しているか
-* h3/h4 欠落が改善しているか
-* table構造補正が gold に近づいているか
-* 共通部品混入が増えていないか
-* `rgb（` や caption id 重複などの warning が増えていないか
+`ai-v0` を生成しないため、`previous fixture missing` warning は想定どおりであり、失敗扱いしない。
 
 関連手順：
 
 - [`docs/composite-fixture-workflow.md`](composite-fixture-workflow.md)
+- [`docs/v1-improvements-from-legacy.md`](v1-improvements-from-legacy.md)
 
 ---
 
