@@ -176,3 +176,8 @@ python tools/compare_saga_city_versions.py \
 すべての自治体ページで完全に同じ結果を保証するものではありません。
 
 今後、別パターンの課題が見つかった場合は、`*-test` fixtureを追加し、同じ形式で検証します。
+
+## 関連ドキュメント
+
+- [`docs/operations-v1.0.md`](operations-v1.0.md)
+- [`docs/release-notes-v1.0.md`](release-notes-v1.0.md)

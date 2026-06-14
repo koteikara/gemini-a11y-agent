@@ -202,6 +202,11 @@ python tools/compare_saga_city_versions.py \
 - [`docs/composite-fixture-workflow.md`](composite-fixture-workflow.md)
 - [`docs/v1-improvements-from-legacy.md`](v1-improvements-from-legacy.md)
 
+関連ドキュメント:
+
+- [`docs/release-notes-v1.0.md`](release-notes-v1.0.md)
+- [`docs/operations-v1.0.md`](operations-v1.0.md)
+
 ---
 
 ## 今回は取り込まないもの
