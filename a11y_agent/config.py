@@ -3,12 +3,13 @@
 # ==============================================================================
 
 import datetime
+import os
 import re
 
 # === ツール情報 ===
 TOOL_VERSION = "v1.0"
 BUILD_ID = "v1.0"
-MODEL_ID = "gemini-2.0-flash"
+MODEL_ID = os.environ.get("GEMINI_MODEL_ID", "gemini-2.5-flash")
 
 # === シート・Drive ===
 MASTER_SHEET_ID = "1jA-tsRQxlbZa1_2vzIG5K55rpMR13uv6svjUtuVFcY0"
