@@ -9,6 +9,7 @@ existing regression tools such as regression_check_14256.py.
 from __future__ import annotations
 
 import argparse
+from html.parser import HTMLParser
 import re
 import sys
 from collections import Counter
@@ -53,8 +54,6 @@ COUNT_PATTERNS = {
 }
 
 COMMON_PARTS = {
-    "menu_present": "Menu",
-    "pagetop_present": "PageTop",
     "footer_present": "<footer",
 }
 
@@ -118,6 +117,80 @@ def read_text(path: Path) -> str | None:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
+class CommonPartsParser(HTMLParser):
+    """Detect common navigation parts while ignoring comments and metadata text."""
+
+    TEXT_SKIP_TAGS = {"script", "style", "title", "meta", "head"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.menu_present = False
+        self.pagetop_present = False
+        self._skip_depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag_l = tag.lower()
+        if tag_l in self.TEXT_SKIP_TAGS:
+            self._skip_depth += 1
+
+        attr_map = {name.lower(): (value or "") for name, value in attrs}
+        haystacks = [
+            attr_map.get("id", ""),
+            attr_map.get("class", ""),
+            attr_map.get("href", ""),
+            attr_map.get("aria-label", ""),
+        ]
+        for value in haystacks:
+            self._detect_value(value)
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.handle_starttag(tag, attrs)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() in self.TEXT_SKIP_TAGS and self._skip_depth > 0:
+            self._skip_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_depth:
+            return
+        self._detect_visible_text(data)
+
+    def _detect_value(self, value: str) -> None:
+        normalized = str(value or "").strip().lower()
+        if not normalized:
+            return
+        if re.search(r"(?:^|[-_#/:])menu(?:$|[-_#/:])", normalized):
+            self.menu_present = True
+        if re.search(r"(?:page[-_]?top|pagetop|#top|to[-_]?top)", normalized):
+            self.pagetop_present = True
+
+    def _detect_visible_text(self, value: str) -> None:
+        normalized = re.sub(r"\s+", " ", str(value or "")).strip().lower()
+        if not normalized:
+            return
+        if normalized in {"menu", "メニュー"}:
+            self.menu_present = True
+        if normalized in {"pagetop", "page top", "ページトップ", "ページの先頭へ", "先頭へ戻る"}:
+            self.pagetop_present = True
+
+
+def common_parts_presence(html: str) -> dict[str, bool]:
+    parser = CommonPartsParser()
+    try:
+        parser.feed(html)
+    except Exception:
+        # Fall back to comment-stripped string checks if malformed HTML stops parsing.
+        no_comments = re.sub(r"<!--.*?-->", "", html, flags=re.DOTALL)
+        lower_html = no_comments.lower()
+        return {
+            "menu_present": "menu" in lower_html,
+            "pagetop_present": "pagetop" in lower_html or "page-top" in lower_html,
+        }
+    return {
+        "menu_present": parser.menu_present,
+        "pagetop_present": parser.pagetop_present,
+    }
+
 def duplicate_caption_id_count(html: str) -> int:
     ids = re.findall(r'id=["\'](caption[^"\']*)["\']', html, flags=re.IGNORECASE)
     counts = Counter(ids)
@@ -135,6 +208,7 @@ def collect_metrics(path: Path) -> HtmlMetrics:
         values[key] = needle in html
     for key, needle in COUNT_PATTERNS.items():
         values[key] = lower_html.count(needle.lower())
+    values.update(common_parts_presence(html))
     for key, needle in COMMON_PARTS.items():
         values[key] = needle.lower() in lower_html
     values["caption_id_duplicates"] = duplicate_caption_id_count(html)

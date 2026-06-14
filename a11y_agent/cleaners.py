@@ -129,6 +129,10 @@ PROTECT_TABLE_INTRO_KEYWORDS = [
 PROTECT_TABLE_INTRO_MIN_TEXT_LEN = 30
 PROTECT_TABLE_INTRO_HINT_PAT = re.compile(r"(?:※|注記|注意|ください|しましょう|受付|診療時間)")
 
+UPDATE_ONLY_TEXT_PAT = re.compile(
+    r"^更新\s*[:：]\s*\d{4}年\s*\d{1,2}月\s*\d{1,2}日$"
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -1303,6 +1307,22 @@ def is_protect_table_intro(current_blocks, upcoming_blocks, lookahead: int = 3):
     return intro_detected and table_ahead, intro_detected, table_ahead, keyword_hit
 
 
+def remove_update_only_nodes(html_content: str) -> str:
+    """Remove elements whose entire visible text is only a page update date."""
+    try:
+        soup = BeautifulSoup(html_content, "html.parser")
+        candidate_tags = [
+            "p", "div", "span", "li", "dt", "dd", "section", "article", "header", "footer"
+        ]
+        for tag in list(soup.find_all(candidate_tags)):
+            visible_text = tag.get_text(" ", strip=True)
+            normalized = re.sub(r"\s+", "", visible_text)
+            if UPDATE_ONLY_TEXT_PAT.fullmatch(normalized):
+                tag.decompose()
+        return str(soup)
+    except Exception:
+        return html_content
+
 def protect_table_intro_blocks(html_content: str) -> str:
     """DOMを壊さず、テーブル導入文保護のための前処理フック。"""
     try:
@@ -1365,6 +1385,7 @@ def pre_clean(
     h = remove_deprecated_and_nonstandard_attrs(h)
     h = strip_px_sizes_from_style_attr(h)
     h = remove_fileinfo_anywhere_text(h)
+    h = remove_update_only_nodes(h)
 
     logger.debug("pre_clean_before_remove_internal_head=%s", h[:400].replace("\n", "\\n"))
     h = remove_forbidden_internal_text_anywhere(h)
