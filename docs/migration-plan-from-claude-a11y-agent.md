@@ -35,7 +35,7 @@ Gemini-A11y Agent v1.0 の実行環境（Google Colab + Google Sheets + Google D
 
 ### 1. Sheets をジョブ台帳として扱う
 
-現行のスプレッドシート列構成は維持する。  
+現行のスプレッドシート列構成は維持する。
 ただし内部概念として、処理状態を次のように整理する。
 
 | 現行運用 | 参考リポジトリ思想 | 意味 |
@@ -52,7 +52,7 @@ v1.0 時点では、既存列を壊さず、内部ログ・README・将来設計
 
 ### 2. Drive を old / ai / gold の成果物置き場として扱う
 
-参考リポジトリでは、AI生成物を人が確認し、最終版へ承認する運用思想がある。  
+参考リポジトリでは、AI生成物を人が確認し、最終版へ承認する運用思想がある。
 現行環境でもこの考え方を取り込む。
 
 | 区分 | 内容 |
@@ -187,13 +187,16 @@ tests/fixtures/html/saga-city-test/
 * `old/sg02395-composite.html` は作成済み
 * `gold/sg02395-composite.html` は作成済み
 * `ai-v0/sg02395-composite.html` は未配置
-* `ai-v1.0/sg02395-composite.html` は未配置
+* `ai-v1.0/sg02395-composite.html` は配置済み
+
+v1.0出力はColab実運用環境で生成済み。
+`tools/compare_saga_city_versions.py` による current vs gold 比較では、18項目すべてが gold と一致し、`differs_from_gold: 0`、`regressed: 0`、`warning: 0` を確認済み。
+ただし `ai-v0` が未配置のため、旧版AI出力との差分比較は未完了。
 
 次の作業：
 
 1. 旧版Gemini-A11y Agentで `old/sg02395-composite.html` を処理し、`ai-v0/sg02395-composite.html` に配置する
-2. v1.0 Gemini-A11y Agentで `old/sg02395-composite.html` を処理し、`ai-v1.0/sg02395-composite.html` に配置する
-3. 以下を実行して比較する
+2. 旧版AI出力を配置後、以下を実行して previous / current / gold を比較する
 
 ```bash
 python tools/check_saga_city_test_fixture.py

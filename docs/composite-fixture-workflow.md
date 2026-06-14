@@ -54,6 +54,17 @@ python tools/compare_saga_city_versions.py \
 - `improved` が導入文・h3/h4・table構造で出ているか確認します。
 - `status: PASS` または warningのみなら社内v1.0確認材料とします。
 
+
+## 現在の配置状況
+
+- `old/sg02395-composite.html`: 配置済み
+- `gold/sg02395-composite.html`: 配置済み
+- `ai-v1.0/sg02395-composite.html`: 配置済み
+- `ai-v0/sg02395-composite.html`: 未配置
+
+v1.0出力は current vs gold 比較で gold と一致確認済みです。
+次の作業は、旧版AI出力を `ai-v0/sg02395-composite.html` に配置し、previous / current / gold の三者比較を行うことです。
+
 ## v1.0出力の生成
 
 合成fixtureの old HTML を現行 v1.0 処理に流す場合は、以下を実行します。
