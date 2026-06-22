@@ -340,5 +340,6 @@ fixtureを更新する場合のみ、GitHub token を使います。
 
 ## 関連ドキュメント
 
+- URLレジストリ変換手順: [`validation-url-registry-conversion.md`](validation-url-registry-conversion.md)
 - a11y hybrid detect/fix ルール: [`docs/a11y-hybrid-detect-fix-rules.md`](a11y-hybrid-detect-fix-rules.md)
   - 通常運用では `FEATURE_HYBRID_RULES_REPORT=0` のままにし、report-only 検出を明示的に有効化しません。

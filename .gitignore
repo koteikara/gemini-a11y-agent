@@ -1,3 +1,6 @@
 __pycache__/
 .env
 *.ipynb_checkpoints
+
+# Local validation inputs/outputs
+local/
