@@ -10,6 +10,7 @@ v1.0では、実行環境は変更しません。
 ## 事前確認
 
 - v1.0運用開始前の確認: [`docs/v1.0-operation-readiness-checklist.md`](v1.0-operation-readiness-checklist.md)
+- 試験運用結果の記録: [`v1.0-trial-operation-log-template.md`](v1.0-trial-operation-log-template.md)
 
 ## 実行環境
 
