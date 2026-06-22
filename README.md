@@ -75,6 +75,8 @@
 ## ドキュメント
 
 - a11y hybrid detect/fix ルール: [`docs/a11y-hybrid-detect-fix-rules.md`](docs/a11y-hybrid-detect-fix-rules.md)
+  - report-only 検出ロジックの確認: `python tools/check_hybrid_rules.py` / `python tools/check_hybrid_rule_detection.py`
+  - 検出テストは候補抽出と `auto_fix=False`、入力HTML非変更のみを確認します。自動修正はまだ有効化しておらず、fixture / gold / ai-v1.0 出力は変更しません。
 - claude-a11y-agent 設計思想の段階的取り込み計画: [`docs/migration-plan-from-claude-a11y-agent.md`](docs/migration-plan-from-claude-a11y-agent.md)
 - 開発者向け詳細: [`docs/developer.md`](docs/developer.md)
 - 回帰検証手順: [`docs/regression-tests.md`](docs/regression-tests.md)

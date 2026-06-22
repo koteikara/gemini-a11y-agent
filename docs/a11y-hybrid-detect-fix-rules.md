@@ -63,9 +63,11 @@
 
 ```bash
 python tools/check_hybrid_rules.py
+python tools/check_hybrid_rule_detection.py
+python -m pytest tests/test_hybrid_rules_report_only.py
 ```
 
-この検証ツールは、JSONL の読み込み、必須キー、ID重複、`出力契約` の JSON parse、ルール件数 16 件を確認します。
+`check_hybrid_rules.py` は、JSONL の読み込み、必須キー、ID重複、`出力契約` の JSON parse、ルール件数 16 件を確認します。`check_hybrid_rule_detection.py` と `tests/test_hybrid_rules_report_only.py` は、代表的なHTMLから report-only 候補を抽出できること、全候補の `auto_fix` が `False` のままであること、入力HTML文字列を変更しないことを確認します。これらの検出テストは候補抽出のみを対象とし、HTML出力、fixture、gold、ai-v1.0 出力は変更しません。自動修正はまだ有効化していません。
 
 ## 今後の段階的有効化方針
 
