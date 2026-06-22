@@ -10,6 +10,8 @@
 - Firecrawl
 - kage
 
+- 評価ステータス一覧: [`docs/external-tools-evaluation-status.md`](external-tools-evaluation-status.md)
+
 v1.0本体のHTML補正処理は、すでに `saga-city-test` 合成fixtureで `ai-v1.0` と `gold` が一致しているため、現時点では外部ツールを本体処理へ直接組み込みません。
 
 ## 現時点の基本方針
