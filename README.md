@@ -74,6 +74,7 @@
 
 ## ドキュメント
 
+- a11y hybrid detect/fix ルール: [`docs/a11y-hybrid-detect-fix-rules.md`](docs/a11y-hybrid-detect-fix-rules.md)
 - claude-a11y-agent 設計思想の段階的取り込み計画: [`docs/migration-plan-from-claude-a11y-agent.md`](docs/migration-plan-from-claude-a11y-agent.md)
 - 開発者向け詳細: [`docs/developer.md`](docs/developer.md)
 - 回帰検証手順: [`docs/regression-tests.md`](docs/regression-tests.md)

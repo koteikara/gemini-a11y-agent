@@ -34,6 +34,8 @@ from .config import (
     FEATURE_IFRAME_YT_OEMBED,
     FEATURE_IFRAME_TITLE_GENERIC_FIX,
     FEATURE_IFRAME_TITLE_LOG,
+    FEATURE_HYBRID_RULES_REPORT,
+    HYBRID_RULES_JSONL_PATH,
     VISION_ON_TARGET_ALL_IMGS,
     VISION_CAP_PER_PAGE,
     TRIM_AFTER_MENU_PAGETOP,
@@ -66,6 +68,7 @@ from .trim_common import (
     should_apply_end_trim,
 )
 from .llm_text import call_llm, prompt_tables, prompt_text_normalize, needs_text_normalize
+from .hybrid_rules import detect_hybrid_candidates, load_hybrid_rules
 from .vision_alt import (
     collect_images_for_vision,
     generate_alt_with_vision,
@@ -96,6 +99,25 @@ def _format_iframe_feature_summary() -> str:
         + "generic_fix={} ".format('ON' if FEATURE_IFRAME_TITLE_GENERIC_FIX else 'OFF')
         + "iframe_log={}".format('ON' if FEATURE_IFRAME_TITLE_LOG else 'OFF')
     )
+
+
+def _log_hybrid_rule_report(final_html: str, url: str) -> None:
+    """Run report-only hybrid rule detection when explicitly enabled."""
+    if not FEATURE_HYBRID_RULES_REPORT:
+        return
+
+    try:
+        rules = load_hybrid_rules(HYBRID_RULES_JSONL_PATH or None)
+        candidates = detect_hybrid_candidates(final_html, base_url=url, rules=rules)
+        counts = defaultdict(int)
+        for item in candidates:
+            counts[item.get("rule_id", "unknown")] += 1
+
+        print(f"  [hybrid-rules] report-only candidates={len(candidates)}")
+        for rule_id in sorted(counts):
+            print(f"  [hybrid-rules] {rule_id} count={counts[rule_id]}")
+    except Exception as ex:
+        print(f"  [hybrid-rules] report-only skipped: {str(ex)[:120]}")
 
 def print_block_log(block_no, total_tokens, step_tokens, step_calls, extra_msg=""):
     """ブロック処理のログ出力"""
@@ -825,6 +847,11 @@ def process_page(row: dict, client, vision_cache: dict) -> dict:
                 print(f"     - {fmsg}")
     else:
         print("  🎨 Vision alt summary: OFF")
+
+    # ------------------------------------------------------------------
+    # Step 16b: hybrid rules report-only（明示的にONの場合のみ）
+    # ------------------------------------------------------------------
+    _log_hybrid_rule_report(final_html, url)
 
     # ------------------------------------------------------------------
     # Step 17: Drive保存
