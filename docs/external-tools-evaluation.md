@@ -281,6 +281,8 @@ https://www.city.saga.lg.jp/main/14256.html
 
 ### Headroom評価
 
+最小評価メモ: [`docs/headroom-evaluation.md`](headroom-evaluation.md)
+
 Colabログや比較結果を対象に試す。
 
 確認：
