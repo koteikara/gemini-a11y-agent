@@ -86,6 +86,7 @@
 - v1.0改善内容: [`docs/v1-improvements-from-legacy.md`](docs/v1-improvements-from-legacy.md)
 - v1.0リリースノート: [`docs/release-notes-v1.0.md`](docs/release-notes-v1.0.md)
 - v1.0運用手順: [`docs/operations-v1.0.md`](docs/operations-v1.0.md)
+- URLレジストリ変換手順: [`docs/validation-url-registry-conversion.md`](docs/validation-url-registry-conversion.md)
 - v1.0運用開始チェックリスト: [`docs/v1.0-operation-readiness-checklist.md`](docs/v1.0-operation-readiness-checklist.md)
 - v1.0試験運用ログテンプレート: [`docs/v1.0-trial-operation-log-template.md`](docs/v1.0-trial-operation-log-template.md)
 - Codex運用フロー: [`docs/codex-workflow.md`](docs/codex-workflow.md)
