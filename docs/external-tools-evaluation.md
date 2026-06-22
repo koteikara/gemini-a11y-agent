@@ -293,6 +293,8 @@ Colabログや比較結果を対象に試す。
 
 ### Firecrawl評価
 
+最小評価メモ: [`docs/firecrawl-evaluation.md`](firecrawl-evaluation.md)
+
 通常取得に失敗するページが見つかったときに限定して試す。
 
 確認：
