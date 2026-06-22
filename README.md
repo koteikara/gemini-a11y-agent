@@ -84,6 +84,7 @@
 - v1.0リリースノート: [`docs/release-notes-v1.0.md`](docs/release-notes-v1.0.md)
 - v1.0運用手順: [`docs/operations-v1.0.md`](docs/operations-v1.0.md)
 - v1.0運用開始チェックリスト: [`docs/v1.0-operation-readiness-checklist.md`](docs/v1.0-operation-readiness-checklist.md)
+- v1.0試験運用ログテンプレート: [`docs/v1.0-trial-operation-log-template.md`](docs/v1.0-trial-operation-log-template.md)
 - Codex運用フロー: [`docs/codex-workflow.md`](docs/codex-workflow.md)
 - Codex `/goal`・`/plan` 運用: [`docs/codex-goal-workflow.md`](docs/codex-goal-workflow.md)
 - 外部支援ツール評価: [`docs/external-tools-evaluation.md`](docs/external-tools-evaluation.md)
