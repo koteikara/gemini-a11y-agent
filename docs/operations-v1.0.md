@@ -288,6 +288,7 @@ Headroom / Firecrawl / kage は、現時点では通常のv1.0運用フローに
 詳細は以下を参照してください。
 
 - [`docs/external-tools-evaluation.md`](external-tools-evaluation.md)
+- Codex運用フロー: [`docs/codex-workflow.md`](codex-workflow.md)
 
 ## よくあるエラー
 
