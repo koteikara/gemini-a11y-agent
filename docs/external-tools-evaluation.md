@@ -262,6 +262,8 @@ kageは、3ツールの中では最も優先して評価する価値がありま
 
 ### kage評価
 
+最小評価メモ: [`docs/kage-evaluation-14256.md`](kage-evaluation-14256.md)
+
 1ページだけを対象に、ローカルPCまたはColab外の環境で試す。
 
 候補：
