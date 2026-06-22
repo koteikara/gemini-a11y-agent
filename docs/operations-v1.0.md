@@ -337,3 +337,8 @@ fixtureを更新する場合のみ、GitHub token を使います。
 * GitHubへ追加するのは、検証fixtureやdocsを更新する場合だけです
 * APIキーやGitHub tokenをノートブックやログに表示しないでください
 * トークンが画面に表示された場合は、GitHub側で削除・再発行してください
+
+## 関連ドキュメント
+
+- a11y hybrid detect/fix ルール: [`docs/a11y-hybrid-detect-fix-rules.md`](a11y-hybrid-detect-fix-rules.md)
+  - 通常運用では `FEATURE_HYBRID_RULES_REPORT=0` のままにし、report-only 検出を明示的に有効化しません。
