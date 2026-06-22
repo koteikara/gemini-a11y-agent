@@ -277,6 +277,18 @@ warning: 0
 
 `previous fixture missing` warning は、`ai-v0` を生成しない方針のため想定どおりです。
 
+## 外部支援ツールについて
+
+Headroom / Firecrawl / kage は、現時点では通常のv1.0運用フローには組み込みません。
+
+- Headroom: ログ・差分・引き継ぎの圧縮補助として評価
+- Firecrawl: 取得fallback候補として評価
+- kage: fixture作成前の証跡保存・オフライン確認用として評価
+
+詳細は以下を参照してください。
+
+- [`docs/external-tools-evaluation.md`](external-tools-evaluation.md)
+
 ## よくあるエラー
 
 ### No module named 'a11y_agent'

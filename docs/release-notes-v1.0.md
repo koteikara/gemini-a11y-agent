@@ -79,3 +79,4 @@ python tools/regression_check_14256.py tests/fixtures/html/saga-city/gold
 * `docs/composite-fixture-workflow.md`
 * `docs/regression-tests.md`
 * `docs/known-issues.md`
+* `docs/external-tools-evaluation.md`
