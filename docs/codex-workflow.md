@@ -8,7 +8,7 @@
 
 ## 2. Codexに任せてよい作業
 
-Codexには、既存仕様・既存運用に沿った範囲で、以下の作業を任せてよいです。
+Codexには、既存仕様・既存運用に沿った範囲で、以下の作業を任せてよいです。長めの作業では、事前に `/goal` と `/plan` を使います。詳細は [`docs/codex-goal-workflow.md`](codex-goal-workflow.md) を参照します。
 
 - README / docs / release notes / operations guide の更新
 - 既存仕様に沿った小規模なPython修正
@@ -29,7 +29,7 @@ Codexには、既存仕様・既存運用に沿った範囲で、以下の作業
 - 変換対象HTML本文を外部ツール出力で置き換えること
 - APIキー、GitHub token、個人情報、非公開情報をリポジトリに追加すること
 - Google Drive / Google Sheets / Colab の実環境に依存する判断を、Codex環境だけで完了扱いにすること
-- kage / Headroom / Firecrawl を v1.0 本体処理へ直接組み込むこと
+- kage / Headroom / Firecrawl / agmsg を v1.0 本体処理へ直接組み込むこと
 - Firecrawl APIキーや外部API設定を勝手に追加すること
 - 依存関係を追加すること。ただし、明示的な指示がある場合は別
 
@@ -87,11 +87,12 @@ fixtureを扱う作業では、以下を守ります。
 
 ## 7. 外部支援ツール評価時のルール
 
-PR #41〜#45 で整理した外部支援ツール評価の方針に従い、kage / Headroom / Firecrawl は現時点では本体処理へ組み込みません。
+PR #41〜#45 で整理した外部支援ツール評価の方針に従い、kage / Headroom / Firecrawl / agmsg は現時点では本体処理へ組み込みません。
 
 - kage: fixture作成前の証跡保存・オフライン確認用
 - Headroom: ログ・差分・Codex引き継ぎ圧縮補助
 - Firecrawl: 取得fallback・JS依存ページ調査候補
+- agmsg: 複数CLIエージェント間の開発・レビュー・検証連携補助
 - 外部ツールの現在状態は [`docs/external-tools-evaluation-status.md`](external-tools-evaluation-status.md) を確認する
 - 詳細な評価方針は [`docs/external-tools-evaluation.md`](external-tools-evaluation.md) を確認する
 
@@ -104,6 +105,8 @@ PR #41〜#45 で整理した外部支援ツール評価の方針に従い、kage
 - Firecrawl Markdown / clean HTML をHTML補正入力として使わない
 - kage出力HTMLを標準入力HTMLとして使わない
 - HeadroomでHTML本文やfixture本文を圧縮・要約・改変しない
+- agmsg を v1.0 本体処理や Colab 標準実行に組み込まない
+- agmsg のメッセージに APIキー、GitHub token、個人情報、非公開情報を含めない
 - APIキー、GitHub token、個人情報、非公開情報をログやfixtureに含めない
 
 ## 8. Codex環境外で確認が必要な作業
@@ -178,6 +181,7 @@ python tools/compare_saga_city_versions.py \
 - [README](../README.md)
 - [v1.0運用手順](operations-v1.0.md)
 - [外部支援ツール評価](external-tools-evaluation.md)
+- [Codex `/goal`・`/plan` 運用](codex-goal-workflow.md)
 - [外部支援ツール評価ステータス](external-tools-evaluation-status.md)
 - [kage評価メモ](kage-evaluation-14256.md)
 - [Headroom評価メモ](headroom-evaluation.md)

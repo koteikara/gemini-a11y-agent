@@ -7,6 +7,10 @@
 v1.0では、実行環境は変更しません。  
 従来どおり、Google Sheets に処理対象を記載し、Google Colab から実行し、HTML出力を Google Drive に保存します。
 
+## 事前確認
+
+- v1.0運用開始前の確認: [`docs/v1.0-operation-readiness-checklist.md`](v1.0-operation-readiness-checklist.md)
+
 ## 実行環境
 
 - Google Colab
@@ -279,11 +283,12 @@ warning: 0
 
 ## 外部支援ツールについて
 
-Headroom / Firecrawl / kage は、現時点では通常のv1.0運用フローには組み込みません。
+Headroom / Firecrawl / kage / agmsg は、現時点では通常のv1.0運用フローには組み込みません。
 
 - Headroom: ログ・差分・引き継ぎの圧縮補助として評価
 - Firecrawl: 取得fallback候補として評価
 - kage: fixture作成前の証跡保存・オフライン確認用として評価
+- agmsg: 複数CLIエージェント間の開発・レビュー・検証連携補助として評価
 
 詳細は以下を参照してください。
 

@@ -83,8 +83,11 @@
 - v1.0改善内容: [`docs/v1-improvements-from-legacy.md`](docs/v1-improvements-from-legacy.md)
 - v1.0リリースノート: [`docs/release-notes-v1.0.md`](docs/release-notes-v1.0.md)
 - v1.0運用手順: [`docs/operations-v1.0.md`](docs/operations-v1.0.md)
+- v1.0運用開始チェックリスト: [`docs/v1.0-operation-readiness-checklist.md`](docs/v1.0-operation-readiness-checklist.md)
 - Codex運用フロー: [`docs/codex-workflow.md`](docs/codex-workflow.md)
+- Codex `/goal`・`/plan` 運用: [`docs/codex-goal-workflow.md`](docs/codex-goal-workflow.md)
 - 外部支援ツール評価: [`docs/external-tools-evaluation.md`](docs/external-tools-evaluation.md)
+- agmsg 評価メモ: [`docs/agmsg-evaluation.md`](docs/agmsg-evaluation.md)
 - 合成fixtureチェック: `python tools/check_saga_city_test_fixture.py`
 - 合成fixture v1.0出力生成: `python tools/run_saga_city_test_fixture_v1.py`
 - 合成fixtureバージョン比較: `python tools/compare_saga_city_versions.py`

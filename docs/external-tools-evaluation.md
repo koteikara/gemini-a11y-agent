@@ -1,4 +1,4 @@
-# 外部支援ツール評価：Headroom / Firecrawl / kage
+# 外部支援ツール評価：Headroom / Firecrawl / kage / agmsg
 
 ## 目的
 
@@ -9,6 +9,7 @@
 - Headroom
 - Firecrawl
 - kage
+- agmsg
 
 - 評価ステータス一覧: [`docs/external-tools-evaluation-status.md`](external-tools-evaluation-status.md)
 
@@ -21,6 +22,7 @@ v1.0本体のHTML補正処理は、すでに `saga-city-test` 合成fixtureで `
 | Headroom | ログ・差分・Codex引き継ぎの圧縮補助 | 中 | しない |
 | Firecrawl | 取得fallback・JS依存ページ調査 | 中〜低 | しない |
 | kage | fixture作成前の証跡保存・オフライン確認 | 高 | しない |
+| agmsg | 複数CLIエージェント間の開発・レビュー・検証連携補助 | 低〜中 | しない |
 
 ---
 
@@ -216,18 +218,77 @@ kageは、3ツールの中では最も優先して評価する価値がありま
 
 ---
 
+## agmsg
+
+### 概要
+
+agmsg は、Claude Code / Codex / Gemini CLI / GitHub Copilot CLI / OpenCode などのCLI AIエージェント間で、ローカルSQLiteを介してメッセージをやり取りする開発支援ツールです。
+
+Gemini-A11y Agent では、HTML補正本体や Colab 実行環境には組み込まず、開発フロー補助としてのみ評価します。
+
+### Gemini-A11y Agentで期待できるメリット
+
+agmsg は、本体処理ではなく、複数のCLI AIエージェントを使った開発・レビュー・検証・引き継ぎの連携を整理する用途で役立つ可能性があります。
+
+想定用途：
+
+- Codex / Claude Code / Gemini CLI 間の作業連携
+- 実装担当・レビュー担当・検証担当の分担
+- PRレビュー前の差分確認
+- fixture方針・禁止事項に反していないかのチェック
+- 長いCodex引き継ぎの分割
+- 外部ツール評価作業のレビュー補助
+- `/goal` と組み合わせた役割分担の検証
+
+### 使わない対象
+
+以下には使いません。
+
+- v1.0本体のHTML補正処理
+- Colab標準実行環境
+- 変換対象HTML本文
+- table単体LLM入力
+- gold fixture
+- ai-v1.0 fixture
+- 自動fixture生成
+- APIキー、GitHub token、個人情報、非公開情報を含むメッセージ送信
+
+理由：
+
+agmsg はエージェント間の連携を補助するためのツールであり、自治体HTML本文やfixtureを生成・改変するための入力経路ではありません。メッセージ経由の指示だけで `gold` や `ai-v1.0` を自動生成すると、v1.0で固定した検証前提が崩れる可能性があります。
+
+### 評価観点
+
+agmsgを試す場合は、以下を確認します。
+
+- 複数CLIエージェント間で作業目的と制約を正しく共有できるか
+- implementer / reviewer / verifier の役割分担が明確になるか
+- PRレビュー前の差分確認に役立つか
+- fixture方針・禁止事項に反した指示を検出しやすくなるか
+- `/goal` と組み合わせても、v1.0方針が維持されるか
+- メッセージに秘匿情報を含めない運用にできるか
+- Codex monitor mode を使わず、manual / turn 運用で小さく試せるか
+
+### 判断
+
+agmsg は本体処理ではなく、開発・レビュー・検証・引き継ぎ補助として評価します。現時点では必須導入しません。
+
+まずはローカル開発環境で小さく試します。Codex monitor mode はベータ扱いのため、まずは turn / manual 運用を優先します。
+
+---
+
 ## 比較表
 
-| 観点 | Headroom | Firecrawl | kage |
-|---|---|---|---|
-| 主目的 | コンテキスト圧縮 | Web取得API | オフライン複製 |
-| 期待用途 | ログ・差分・引き継ぎ圧縮 | 取得fallback | 証跡保存・fixture補助 |
-| 外部API | 構成次第 | 必要 | 不要 |
-| ローカル実行 | 可能 | API中心 | 可能 |
-| JS描画対応 | 対象外 | 対応 | headless Chromeで対応 |
-| HTML構造保持 | 圧縮対象次第でリスク | 要検証 | レンダリング後DOMとして保存 |
-| 本体処理への直接導入 | しない | しない | しない |
-| 評価優先度 | 中 | 中〜低 | 高 |
+| 観点 | Headroom | Firecrawl | kage | agmsg |
+|---|---|---|---|---|
+| 主目的 | コンテキスト圧縮 | Web取得API | オフライン複製 | CLIエージェント間連携 |
+| 期待用途 | ログ・差分・引き継ぎ圧縮 | 取得fallback | 証跡保存・fixture補助 | 開発・レビュー・検証連携 |
+| 外部API | 構成次第 | 必要 | 不要 | 不要 |
+| ローカル実行 | 可能 | API中心 | 可能 | 可能 |
+| JS描画対応 | 対象外 | 対応 | headless Chromeで対応 | 対象外 |
+| HTML構造保持 | 圧縮対象次第でリスク | 要検証 | レンダリング後DOMとして保存 | HTML本文には使わない |
+| 本体処理への直接導入 | しない | しない | しない | しない |
+| 評価優先度 | 中 | 中〜低 | 高 | 低〜中 |
 
 ---
 
@@ -238,12 +299,14 @@ kageは、3ツールの中では最も優先して評価する価値がありま
 1. kage
 2. Headroom
 3. Firecrawl
+4. agmsg
 
 理由：
 
 - kageは、検証対象を増やす際の証跡保存に直接役立つ
 - Headroomは、長いログやCodex引き継ぎの効率化に役立つ
 - Firecrawlは有用だが、外部API・コスト・自治体ページの取り扱い確認が必要
+- agmsgは本体処理ではなく、開発・レビュー・検証連携の補助として小さく試す
 
 ---
 
@@ -257,6 +320,8 @@ kageは、3ツールの中では最も優先して評価する価値がありま
 - HTML補正本体に外部ツールを直接組み込む
 - 検証済みのv1.0処理フローを変更する
 - APIキーやGitHub tokenをログやfixtureに含める
+- agmsg のメッセージに APIキー、GitHub token、個人情報、非公開情報を含める
+- agmsg を v1.0 本体処理や Colab 標準実行に組み込む
 
 ---
 
@@ -304,3 +369,10 @@ Colabログや比較結果を対象に試す。
 * HTML形式で本文構造が保持されるか
 * Markdown化でtableや見出しが欠落しないか
 * 外部APIに対象URLを渡すことが許容されるか
+
+
+### agmsg評価
+
+最小評価メモ: [`docs/agmsg-evaluation.md`](agmsg-evaluation.md)
+
+ローカル開発環境で1リポジトリだけを対象に、manual / turn 運用を試す。Codex monitor mode はベータ扱いとして慎重に扱う。
