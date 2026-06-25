@@ -19,6 +19,15 @@
 5. メニュー「アクセシビリティ補正」>「HTML補正サイドバーを開く」を選ぶ。
 6. `samples/sample-input.html` のようなコンテンツ部分HTMLを貼り付け、解析・実行する。
 
+
+## サイドバー起動方式とRULES注入
+
+- `Sidebar.html` は Apps Script テンプレートscriptletを使い、起動時に `RULES` をクライアント側JavaScriptへ初期注入します。
+- 現在のMVPはテンプレート注入方式です。`Sidebar.html` に `const RULES = <?!= JSON.stringify(normalizeA11ySidebarRulesForClient()) ?>;` を残し、`google.script.run` による非同期ルール取得には切り替えていません。
+- そのため `showA11ySidebar()` は `HtmlService.createHtmlOutputFromFile('Sidebar')` ではなく、`HtmlService.createTemplateFromFile('Sidebar').evaluate()` を使います。
+- この起動方式でない場合、サイドバー上で `const RULES = <?!= ... ?>` がそのまま残り、JavaScript構文エラーになる可能性があります。
+- `ManualLlm.gs` と `Sidebar.html` には似た手動LLM用のプロンプト生成・JSON検証ロジックがあります。MVPではAPI通信や `google.script.run` 往復を増やさないため、実際のサイドバー操作は `Sidebar.html` 側のクライアントロジックを正とします。`ManualLlm.gs` は将来サーバー側呼び出しへ切り替える場合の予備実装として同梱しています。
+
 ## LLM利用モード
 
 - 標準は「LLMなし」。HTMLは外部APIへ自動送信しません。
@@ -66,6 +75,27 @@
 6. 最後にユーザーが内容を確認し、「HTMLへ適用」を押します。
 
 MVPではAPI自動連携は未実装です。Gemini固定ではなく、将来の任意プロバイダー連携のための表示に留めています。
+
+
+## Google Sheets実機での手動起動確認
+
+1. Google Sheetsを開く。
+2. 拡張機能 > Apps Script を開く。
+3. `Code.gs` / `Rules.gs` / `RuleEngine.gs` / `ManualLlm.gs` / `Sidebar.html` を同名ファイルとして配置する。
+4. スプレッドシートを再読み込みする。
+5. メニュー「アクセシビリティ補正」>「HTML補正サイドバーを開く」を選ぶ。
+6. サイドバーが開くことを確認する。
+7. 「HTML補正」「使い方」タブが表示されることを確認する。
+8. `samples/sample-input.html` を入力HTMLに貼り付ける。
+9. 「HTML解析」を押す。
+10. iframe / img / table / a / form の件数が表示されることを確認する。
+11. 16ルールが処理一覧に表示されることを確認する。
+12. 「上から順に実行」を押し、候補が表示されることを確認する。
+13. 候補を1つ適用し、出力HTMLが変わることを確認する。
+14. 出力HTMLに `data-a11y-candidate-id` が残らないことを確認する。
+15. 出力HTMLをコピーできることを確認する。
+
+この環境ではGoogle SheetsコンテナバインドApps Scriptの実機起動までは自動確認できないため、上記手順でブラウザ上の起動と操作を確認してください。
 
 ## 既存Colab版との共存
 

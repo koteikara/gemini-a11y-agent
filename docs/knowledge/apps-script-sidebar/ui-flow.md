@@ -17,6 +17,13 @@ timestamp: 2026-06-25T00:00:00+09:00
 
 タブは配列定義で管理し、`activeTab` を状態として持つ。タブボタンとタブパネルを分離し、追加時にHTML全体を大きく書き換えない。`role="tablist"`、`role="tab"`、`role="tabpanel"`、`aria-selected`、`hidden` を使う。
 
+
+## 起動時のRULES注入
+
+サイドバーはApps Scriptテンプレート注入方式でルール一覧を初期化する。`Sidebar.html` の `const RULES = <?!= JSON.stringify(normalizeA11ySidebarRulesForClient()) ?>;` を評価するため、起動側の `showA11ySidebar()` は `HtmlService.createTemplateFromFile('Sidebar').evaluate()` を使う。`createHtmlOutputFromFile('Sidebar')` のままだとscriptletがHTMLに残り、クライアント側JavaScriptの構文エラーになる可能性がある。
+
+手動LLM連携はMVPでは `Sidebar.html` 側のクライアントロジックを正とし、外部LLM APIへの自動送信や追加の `google.script.run` 往復は行わない。`ManualLlm.gs` は将来サーバー側ロジックへ切り替える場合の予備として保持する。
+
 ## 候補適用UI
 
 1. HTML解析時に iframe の `frameborder` を低リスク自動補正で削除する。
