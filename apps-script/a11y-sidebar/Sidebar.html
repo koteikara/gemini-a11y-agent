@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><base target="_top"><meta charset="UTF-8"><style>
+body{font-family:Arial,sans-serif;font-size:13px;margin:12px} textarea{width:100%;box-sizing:border-box;font-family:monospace} button{margin:3px}.rule,.candidate{border:1px solid #ddd;border-radius:6px;padding:6px;margin:6px 0}.status{font-weight:bold}.summary span{display:inline-block;margin-right:8px}.low{background:#eef8ee}.warn{background:#fff8df}</style></head>
+<body>
+<h2>HTMLアクセシビリティ補正</h2>
+<label>入力HTML</label><textarea id="input" rows="10"></textarea>
+<div><button onclick="analyzeHtml()">HTML解析</button><button onclick="runEnabledRules()">上から順に実行</button><button onclick="resetAll()">リセット</button></div>
+<label>LLM利用モード <select id="llmMode"><option>LLMなし</option><option>手動LLM連携</option><option>API自動連携（任意・未設定）</option></select></label>
+<div class="summary" id="summary"></div>
+<h3>処理一覧</h3><div id="rules"></div>
+<h3>要確認候補</h3><div id="candidates"></div>
+<h3>出力HTML</h3><textarea id="output" rows="10"></textarea><button onclick="copyOutput()">コピーする</button>
+<script>
+const RULES = <?!= JSON.stringify(normalizeA11ySidebarRulesForClient()) ?>;
+const state={originalHtml:'',currentHtml:'',wrapper:null,rules:RULES,candidates:[],history:[]};
+const vagueTexts=['こちら','ここ','詳細','詳しくはこちら','続き','リンク','more','click here'];
+const genericAlt=['','画像','写真','リンク','詳細','クリック'];
+function parse(){const w=document.createElement('div');w.innerHTML=state.currentHtml||state.originalHtml;state.wrapper=w;return w;}
+function counts(w){return {iframe:w.querySelectorAll('iframe').length,img:w.querySelectorAll('img').length,table:w.querySelectorAll('table').length,a:w.querySelectorAll('a').length,form:w.querySelectorAll('form').length};}
+function analyzeHtml(){state.originalHtml=document.getElementById('input').value;state.currentHtml=state.originalHtml;state.candidates=[];const w=parse();const c=counts(w);document.getElementById('summary').innerHTML=Object.entries(c).map(([k,v])=>`<span>${k}: ${v}</span>`).join('');state.rules.forEach(r=>{r.status='未実行';if((r.category==='image'&&c.img===0)||(r.category==='iframe'&&c.iframe===0)||(r.category==='table'&&c.table===0)||(r.category==='link'&&c.a===0))r.status='対象なし';if(r.id==='LINK-R-03')r.status='未実装';});render();document.getElementById('output').value=state.currentHtml;}
+function runEnabledRules(){state.rules.filter(r=>r.enabled!==false).forEach(r=>{if(['未実行','検出済み'].includes(r.status))runRule(r.id)});render();}
+function runRule(id){const r=state.rules.find(x=>x.id===id);if(!r||['対象なし','スキップ','未実装'].includes(r.status))return;const w=parse();let n=0;const add=(el,msg,payload)=>{n++;state.candidates.push({id:'c'+Date.now()+Math.random(),ruleId:id,message:msg,payload,html:el?el.outerHTML:''});};
+switch(id){
+case 'IMG-W-02':w.querySelectorAll('iframe').forEach(el=>{const src=el.getAttribute('src')||'',t=(el.getAttribute('title')||'').trim();if(/youtube|youtu\.be/.test(src)&&(!t||/^(youtube|動画|iframe|埋め込み|https?:)/i.test(t)))add(el,'YouTube iframeのtitle確認',{src,title:t,suggestion:'動画の内容を表すtitleを入力'});});break;
+case 'HTML-R-15':w.querySelectorAll('table').forEach((el,i)=>{const cap=el.querySelector('caption');if(!cap||!cap.textContent.trim())add(el,'captionがないtable',{index:i+1,suggestion:'表の内容を示すcaptionを入力'});});break;
+case 'HTML-R-16':w.querySelectorAll('table').forEach(el=>{if(el.querySelector('[rowspan],[colspan]'))add(el,'結合セルを含むtable',{mode:'detect-only'});});break;
+case 'HTML-W-02':w.querySelectorAll('table').forEach(el=>{if(!el.querySelector('th,caption')&&el.querySelectorAll('td').length<=6)add(el,'レイアウトtable疑い',{mode:'detect-only'});});break;
+case 'LINK-R-02':w.querySelectorAll('a').forEach(el=>{if(vagueTexts.includes(el.textContent.trim().toLowerCase()))add(el,'曖昧リンク文言',{href:el.href||el.getAttribute('href'),linkText:el.textContent.trim(),contextText:(el.parentElement&&el.parentElement.textContent||'').trim().slice(0,200)});});break;
+case 'LINK-R-04':w.querySelectorAll('a').forEach(el=>{const txt=el.textContent.trim(),href=el.getAttribute('href')||'';if(/^mailto:/i.test(href)||/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(txt))add(el,'メールアドレスリンク確認',{href,linkText:txt});});break;
+case 'LINK-R-08':w.querySelectorAll('a[href*="#"]').forEach(el=>{const href=el.getAttribute('href')||'';if(!href.startsWith('#'))add(el,'別ページfragmentリンク',{href,linkText:el.textContent.trim()});});break;
+case 'LINK-R-09':w.querySelectorAll('a[href^="#"]').forEach(el=>{const id=decodeURIComponent((el.getAttribute('href')||'').slice(1));if(id&&!w.querySelector('#'+CSS.escape(id)))add(el,'対応idがないページ内リンク',{href:el.getAttribute('href'),linkText:el.textContent.trim()});});break;
+case 'IMG-R-05':w.querySelectorAll('a img').forEach(el=>{const alt=(el.getAttribute('alt')||'').trim();if(genericAlt.includes(alt))add(el,'リンク画像のalt確認',{alt,href:el.closest('a').getAttribute('href')});});break;
+case 'IMG-R-09':w.querySelectorAll('a[href]').forEach(el=>{if(/\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(el.getAttribute('href'))&&el.querySelector('img'))add(el,'画像ファイルへのリンク確認',{href:el.getAttribute('href'),text:el.textContent.trim()});});break;
+case 'IMG-W-01':w.querySelectorAll('img').forEach(el=>{if(!(el.getAttribute('alt')||'').trim())add(el,'画像alt生成は手動LLM候補',{src:el.getAttribute('src')});});break;
+case 'SKIP-04':Array.from(w.children).slice(-4).forEach(el=>{if(/問い合わせ|問合せ|担当|電話|FAX|ページトップ/.test(el.textContent))add(el,'末尾署名・問い合わせ候補',{text:el.textContent.trim().slice(0,200)});});break;
+case 'HTML-R-08': if(/[0-9０-９]{1,4}[\/年月日:-]/.test(w.textContent)) add(w,'日付・時刻表記候補',{mode:'detect-only'}); break;
+case 'HTML-R-21': if(/[→←⇒※■□◆◇]/.test(w.textContent)) add(w,'記号表現候補',{mode:'detect-only'}); break;
+case 'LINK-R-06':w.querySelectorAll('p a[href^="#"]').forEach(el=>add(el,'文章中の内部リンク候補',{href:el.getAttribute('href')}));break;
+}
+r.status=n?(r.requiresReview?'要確認':'検出済み'):'対象なし';state.currentHtml=w.innerHTML;document.getElementById('output').value=state.currentHtml;render();}
+function skipRule(id){const r=state.rules.find(x=>x.id===id);r.status='スキップ';render();}
+function applyCandidate(cid){const c=state.candidates.find(x=>x.id===cid);alert('MVPでは候補内容を確認し、出力HTML欄で手修正してください。\n'+JSON.stringify(c.payload,null,2));}
+function render(){document.getElementById('rules').innerHTML=state.rules.map(r=>`<div class="rule ${r.risk==='low'?'low':'warn'}"><label><input type="checkbox" ${r.enabled!==false?'checked':''} onchange="rToggle('${r.id}',this.checked)">${r.order}. ${r.id} ${r.label}</label><div class="status">${r.status}</div><button onclick="runRule('${r.id}')">個別実行</button><button onclick="skipRule('${r.id}')">スキップ</button></div>`).join('');document.getElementById('candidates').innerHTML=state.candidates.map(c=>`<div class="candidate"><b>${c.ruleId}</b> ${c.message}<pre>${escapeHtml(JSON.stringify(c.payload,null,2))}</pre><button onclick="applyCandidate('${c.id}')">適用/手修正</button></div>`).join('')||'候補はありません。';}
+function rToggle(id,checked){state.rules.find(r=>r.id===id).enabled=checked;}function copyOutput(){navigator.clipboard.writeText(document.getElementById('output').value);}function resetAll(){document.getElementById('input').value=state.originalHtml;analyzeHtml();}function escapeHtml(s){return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
+render();
+</script></body></html>
