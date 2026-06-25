@@ -30,3 +30,8 @@ MVPで自動補正するのは iframe の `frameborder` 削除など低リスク
 ## 関連
 
 - [ナレッジ索引](../index.md)
+
+
+## APIキーと外部送信
+
+Gemini APIキーはUserPropertiesに保存し、シート本文や使用履歴には記録しません。API連携では候補HTMLや周辺テキストが外部APIへ送信されるため、個人情報、非公開情報、機密情報を含むHTMLでは使用しないでください。
