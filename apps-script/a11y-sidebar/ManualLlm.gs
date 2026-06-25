@@ -4,11 +4,19 @@ var A11yManualLlm = (function () {
     return [
       '以下のHTMLアクセシビリティ候補を改善してください。',
       'ツールへ戻すため、回答はJSONのみで返してください。',
+      'HTML全体は返さず、候補に必要な短い文言だけを返してください。',
       '対象ルール: ' + ruleId,
       '入力:',
       JSON.stringify(payload || {}, null, 2),
       '出力形式:',
-      JSON.stringify({ruleId: ruleId, replacementText: '改善後の短い文言', reason: '理由'}, null, 2)
+      JSON.stringify({
+        ruleId: ruleId,
+        replacementText: 'リンク文言などの改善案。不要な場合は省略可',
+        alt: '画像alt案。不要な場合は省略可',
+        caption: 'table caption案。不要な場合は省略可',
+        title: 'iframe title案。不要な場合は省略可',
+        reason: '理由'
+      }, null, 2)
     ].join('\n');
   }
 
@@ -16,11 +24,11 @@ var A11yManualLlm = (function () {
     try {
       var parsed = JSON.parse(responseText);
       if (parsed.ruleId !== ruleId) return {ok:false,error:'ruleIdが一致しません。'};
-      if (!parsed.replacementText || String(parsed.replacementText).trim() === '') {
-        return {ok:false,error:'replacementTextが空です。'};
-      }
       if (parsed.html || parsed.fullHtml || parsed.document) {
         return {ok:false,error:'HTML全体を書き換える回答は受け付けません。'};
+      }
+      if (!parsed.replacementText && !parsed.alt && !parsed.caption && !parsed.title) {
+        return {ok:false,error:'replacementText / alt / caption / title のいずれかが必要です。'};
       }
       return {ok:true,value:parsed};
     } catch (e) {
