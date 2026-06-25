@@ -1,47 +1,75 @@
 <!DOCTYPE html>
 <html lang="ja">
-<head><base target="_top"><meta charset="UTF-8"><style>
-body{font-family:Arial,sans-serif;font-size:13px;margin:12px} textarea{width:100%;box-sizing:border-box;font-family:monospace} button{margin:3px}.rule,.candidate{border:1px solid #ddd;border-radius:6px;padding:6px;margin:6px 0}.status{font-weight:bold}.summary span{display:inline-block;margin-right:8px}.low{background:#eef8ee}.warn{background:#fff8df}</style></head>
+<head>
+<base target="_top"><meta charset="UTF-8">
+<style>
+body{font-family:Arial,sans-serif;font-size:13px;margin:12px;color:#202124} textarea,input,select{width:100%;box-sizing:border-box} textarea{font-family:monospace} button{margin:3px 3px 3px 0}.tabs{display:flex;gap:4px;flex-wrap:wrap;margin:8px 0}.tab{border:1px solid #dadce0;background:#f8f9fa;border-radius:16px;padding:6px 10px}.tab[aria-selected="true"]{background:#1a73e8;color:#fff;border-color:#1a73e8}.panel[hidden]{display:none}.rule,.candidate,.llmBox{border:1px solid #ddd;border-radius:6px;padding:8px;margin:8px 0}.status{font-weight:bold}.summary span{display:inline-block;margin-right:8px}.low{background:#eef8ee}.warn{background:#fff8df}.applied{background:#eef8ff}.error{background:#fdecea}.field{margin:6px 0}.small{font-size:12px;color:#5f6368}.candidate pre{white-space:pre-wrap;background:#f8f9fa;padding:6px}.row{display:flex;gap:6px;flex-wrap:wrap}.row button{flex:1 1 auto}
+</style>
+</head>
 <body>
 <h2>HTMLアクセシビリティ補正</h2>
-<label>入力HTML</label><textarea id="input" rows="10"></textarea>
-<div><button onclick="analyzeHtml()">HTML解析</button><button onclick="runEnabledRules()">上から順に実行</button><button onclick="resetAll()">リセット</button></div>
-<label>LLM利用モード <select id="llmMode"><option>LLMなし</option><option>手動LLM連携</option><option>API自動連携（任意・未設定）</option></select></label>
-<div class="summary" id="summary"></div>
-<h3>処理一覧</h3><div id="rules"></div>
-<h3>要確認候補</h3><div id="candidates"></div>
-<h3>出力HTML</h3><textarea id="output" rows="10"></textarea><button onclick="copyOutput()">コピーする</button>
+<div id="tabButtons" class="tabs" role="tablist" aria-label="サイドバー機能"></div>
+<section id="panel-fix" class="panel" role="tabpanel" aria-labelledby="tab-fix">
+  <label>入力HTML</label><textarea id="input" rows="10"></textarea>
+  <div><button onclick="analyzeHtml()">HTML解析</button><button onclick="runEnabledRules()">上から順に実行</button><button onclick="resetAll()">リセット</button></div>
+  <label>LLM利用モード <select id="llmMode"><option>LLMなし</option><option>手動LLM連携</option><option>API自動連携（任意・未設定）</option></select></label>
+  <div class="summary" id="summary"></div>
+  <h3>処理一覧</h3><div id="rules"></div>
+  <h3>要確認候補</h3><div id="candidates"></div>
+  <h3>出力HTML</h3><textarea id="output" rows="10"></textarea><button onclick="copyOutput()">コピーする</button>
+</section>
+<section id="panel-help" class="panel" role="tabpanel" aria-labelledby="tab-help" hidden>
+  <h3>使い方</h3>
+  <p>このタブには、HTML補正サイドバーの使い方を掲載予定です。</p>
+  <p>今後追加予定:</p>
+  <ul><li>基本的な操作手順</li><li>LLMなしモードの使い方</li><li>手動LLM連携の使い方</li><li>候補の適用・スキップ方法</li><li>出力HTMLのコピー方法</li><li>よくある質問</li></ul>
+</section>
 <script>
 const RULES = <?!= JSON.stringify(normalizeA11ySidebarRulesForClient()) ?>;
-const state={originalHtml:'',currentHtml:'',wrapper:null,rules:RULES,candidates:[],history:[]};
+const A11yManualLlm = {
+  buildPrompt(payload){const ruleId=payload&&payload.ruleId?payload.ruleId:'UNKNOWN';return ['以下のHTMLアクセシビリティ候補を改善してください。','ツールへ戻すため、回答はJSONのみで返してください。','対象ルール: '+ruleId,'入力:',JSON.stringify(payload||{},null,2),'出力形式:',JSON.stringify({ruleId:ruleId,replacementText:'改善後の短い文言、または alt/caption/title',alt:'画像代替テキスト案',caption:'表キャプション案',title:'iframe title案',reason:'理由'},null,2)].join('\n');},
+  validateResponse(ruleId,responseText){try{const parsed=JSON.parse(responseText);if(parsed.ruleId!==ruleId)return {ok:false,error:'ruleIdが一致しません。'};if(parsed.html||parsed.fullHtml||parsed.document)return {ok:false,error:'HTML全体を書き換える回答は受け付けません。'};if(!parsed.replacementText&&!parsed.alt&&!parsed.caption&&!parsed.title)return {ok:false,error:'replacementText / alt / caption / title のいずれかが必要です。'};return {ok:true,value:parsed};}catch(e){return {ok:false,error:'JSONとして解析できません: '+e.message};}}
+};
+const TABS=[{id:'fix',label:'HTML補正',panel:'panel-fix'},{id:'help',label:'使い方',panel:'panel-help'}];
+const state={activeTab:'fix',originalHtml:'',currentHtml:'',wrapper:null,rules:RULES,candidates:[],seq:0,llmTarget:null};
 const vagueTexts=['こちら','ここ','詳細','詳しくはこちら','続き','リンク','more','click here'];
-const genericAlt=['','画像','写真','リンク','詳細','クリック'];
+const genericAlt=['','画像','写真','リンク','詳細','クリック','image','photo'];
+function initTabs(){document.getElementById('tabButtons').innerHTML=TABS.map(t=>`<button id="tab-${t.id}" class="tab" role="tab" aria-controls="${t.panel}" aria-selected="${t.id===state.activeTab}" onclick="setTab('${t.id}')">${t.label}</button>`).join('');setTab(state.activeTab,false)}
+function setTab(id,focus){state.activeTab=id;TABS.forEach(t=>{document.getElementById(t.panel).hidden=t.id!==id;const b=document.getElementById('tab-'+t.id);if(b)b.setAttribute('aria-selected',String(t.id===id));});if(focus!==false)document.getElementById('tab-'+id).focus();}
 function parse(){const w=document.createElement('div');w.innerHTML=state.currentHtml||state.originalHtml;state.wrapper=w;return w;}
 function counts(w){return {iframe:w.querySelectorAll('iframe').length,img:w.querySelectorAll('img').length,table:w.querySelectorAll('table').length,a:w.querySelectorAll('a').length,form:w.querySelectorAll('form').length};}
-function analyzeHtml(){state.originalHtml=document.getElementById('input').value;state.currentHtml=state.originalHtml;state.candidates=[];const w=parse();const c=counts(w);document.getElementById('summary').innerHTML=Object.entries(c).map(([k,v])=>`<span>${k}: ${v}</span>`).join('');state.rules.forEach(r=>{r.status='未実行';if((r.category==='image'&&c.img===0)||(r.category==='iframe'&&c.iframe===0)||(r.category==='table'&&c.table===0)||(r.category==='link'&&c.a===0))r.status='対象なし';if(r.id==='LINK-R-03')r.status='未実装';});render();document.getElementById('output').value=state.currentHtml;}
+function cleanHtml(w){w.querySelectorAll('[data-a11y-candidate-id]').forEach(el=>el.removeAttribute('data-a11y-candidate-id'));return w.innerHTML;}
+function syncOutput(w){state.currentHtml=w.innerHTML;const clone=document.createElement('div');clone.innerHTML=state.currentHtml;document.getElementById('output').value=cleanHtml(clone);}
+function analyzeHtml(){state.originalHtml=document.getElementById('input').value;state.currentHtml=state.originalHtml;state.candidates=[];state.seq=0;const w=parse();w.querySelectorAll('iframe[frameborder]').forEach(el=>el.removeAttribute('frameborder'));const c=counts(w);document.getElementById('summary').innerHTML=Object.entries(c).map(([k,v])=>`<span>${k}: ${v}</span>`).join('');state.rules.forEach(r=>{r.status='未実行';if((r.category==='image'&&c.img===0)||(r.category==='iframe'&&c.iframe===0)||(r.category==='table'&&c.table===0)||(r.category==='link'&&c.a===0))r.status='対象なし';if(r.id==='LINK-R-03')r.status='未実装';});syncOutput(w);render();}
 function runEnabledRules(){state.rules.filter(r=>r.enabled!==false).forEach(r=>{if(['未実行','検出済み'].includes(r.status))runRule(r.id)});render();}
-function runRule(id){const r=state.rules.find(x=>x.id===id);if(!r||['対象なし','スキップ','未実装'].includes(r.status))return;const w=parse();let n=0;const add=(el,msg,payload)=>{n++;state.candidates.push({id:'c'+Date.now()+Math.random(),ruleId:id,message:msg,payload,html:el?el.outerHTML:''});};
-switch(id){
-case 'IMG-W-02':w.querySelectorAll('iframe').forEach(el=>{const src=el.getAttribute('src')||'',t=(el.getAttribute('title')||'').trim();if(/youtube|youtu\.be/.test(src)&&(!t||/^(youtube|動画|iframe|埋め込み|https?:)/i.test(t)))add(el,'YouTube iframeのtitle確認',{src,title:t,suggestion:'動画の内容を表すtitleを入力'});});break;
-case 'HTML-R-15':w.querySelectorAll('table').forEach((el,i)=>{const cap=el.querySelector('caption');if(!cap||!cap.textContent.trim())add(el,'captionがないtable',{index:i+1,suggestion:'表の内容を示すcaptionを入力'});});break;
-case 'HTML-R-16':w.querySelectorAll('table').forEach(el=>{if(el.querySelector('[rowspan],[colspan]'))add(el,'結合セルを含むtable',{mode:'detect-only'});});break;
-case 'HTML-W-02':w.querySelectorAll('table').forEach(el=>{if(!el.querySelector('th,caption')&&el.querySelectorAll('td').length<=6)add(el,'レイアウトtable疑い',{mode:'detect-only'});});break;
-case 'LINK-R-02':w.querySelectorAll('a').forEach(el=>{if(vagueTexts.includes(el.textContent.trim().toLowerCase()))add(el,'曖昧リンク文言',{href:el.href||el.getAttribute('href'),linkText:el.textContent.trim(),contextText:(el.parentElement&&el.parentElement.textContent||'').trim().slice(0,200)});});break;
-case 'LINK-R-04':w.querySelectorAll('a').forEach(el=>{const txt=el.textContent.trim(),href=el.getAttribute('href')||'';if(/^mailto:/i.test(href)||/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(txt))add(el,'メールアドレスリンク確認',{href,linkText:txt});});break;
-case 'LINK-R-08':w.querySelectorAll('a[href*="#"]').forEach(el=>{const href=el.getAttribute('href')||'';if(!href.startsWith('#'))add(el,'別ページfragmentリンク',{href,linkText:el.textContent.trim()});});break;
-case 'LINK-R-09':w.querySelectorAll('a[href^="#"]').forEach(el=>{const id=decodeURIComponent((el.getAttribute('href')||'').slice(1));if(id&&!w.querySelector('#'+CSS.escape(id)))add(el,'対応idがないページ内リンク',{href:el.getAttribute('href'),linkText:el.textContent.trim()});});break;
-case 'IMG-R-05':w.querySelectorAll('a img').forEach(el=>{const alt=(el.getAttribute('alt')||'').trim();if(genericAlt.includes(alt))add(el,'リンク画像のalt確認',{alt,href:el.closest('a').getAttribute('href')});});break;
-case 'IMG-R-09':w.querySelectorAll('a[href]').forEach(el=>{if(/\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(el.getAttribute('href'))&&el.querySelector('img'))add(el,'画像ファイルへのリンク確認',{href:el.getAttribute('href'),text:el.textContent.trim()});});break;
-case 'IMG-W-01':w.querySelectorAll('img').forEach(el=>{if(!(el.getAttribute('alt')||'').trim())add(el,'画像alt生成は手動LLM候補',{src:el.getAttribute('src')});});break;
-case 'SKIP-04':Array.from(w.children).slice(-4).forEach(el=>{if(/問い合わせ|問合せ|担当|電話|FAX|ページトップ/.test(el.textContent))add(el,'末尾署名・問い合わせ候補',{text:el.textContent.trim().slice(0,200)});});break;
-case 'HTML-R-08': if(/[0-9０-９]{1,4}[\/年月日:-]/.test(w.textContent)) add(w,'日付・時刻表記候補',{mode:'detect-only'}); break;
-case 'HTML-R-21': if(/[→←⇒※■□◆◇]/.test(w.textContent)) add(w,'記号表現候補',{mode:'detect-only'}); break;
-case 'LINK-R-06':w.querySelectorAll('p a[href^="#"]').forEach(el=>add(el,'文章中の内部リンク候補',{href:el.getAttribute('href')}));break;
-}
-r.status=n?(r.requiresReview?'要確認':'検出済み'):'対象なし';state.currentHtml=w.innerHTML;document.getElementById('output').value=state.currentHtml;render();}
-function skipRule(id){const r=state.rules.find(x=>x.id===id);r.status='スキップ';render();}
-function applyCandidate(cid){const c=state.candidates.find(x=>x.id===cid);alert('MVPでは候補内容を確認し、出力HTML欄で手修正してください。\n'+JSON.stringify(c.payload,null,2));}
-function render(){document.getElementById('rules').innerHTML=state.rules.map(r=>`<div class="rule ${r.risk==='low'?'low':'warn'}"><label><input type="checkbox" ${r.enabled!==false?'checked':''} onchange="rToggle('${r.id}',this.checked)">${r.order}. ${r.id} ${r.label}</label><div class="status">${r.status}</div><button onclick="runRule('${r.id}')">個別実行</button><button onclick="skipRule('${r.id}')">スキップ</button></div>`).join('');document.getElementById('candidates').innerHTML=state.candidates.map(c=>`<div class="candidate"><b>${c.ruleId}</b> ${c.message}<pre>${escapeHtml(JSON.stringify(c.payload,null,2))}</pre><button onclick="applyCandidate('${c.id}')">適用/手修正</button></div>`).join('')||'候補はありません。';}
-function rToggle(id,checked){state.rules.find(r=>r.id===id).enabled=checked;}function copyOutput(){navigator.clipboard.writeText(document.getElementById('output').value);}function resetAll(){document.getElementById('input').value=state.originalHtml;analyzeHtml();}function escapeHtml(s){return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
-render();
+function newId(ruleId){state.seq+=1;return ruleId+'-'+state.seq;}
+function addCandidate(el,ruleId,msg,payload){const id=newId(ruleId);if(el)el.setAttribute('data-a11y-candidate-id',id);state.candidates.push({candidateId:id,ruleId,selectorKey:'[data-a11y-candidate-id="'+id+'"]',message:msg,payload:payload||{},status:'未確認',llmPrompt:'',llmResponse:'',llmResult:null});}
+function runRule(id){const r=state.rules.find(x=>x.id===id);if(!r||['対象なし','スキップ','未実装'].includes(r.status))return;const w=parse();let before=state.candidates.length;try{switch(id){
+case 'IMG-W-02':w.querySelectorAll('iframe').forEach(el=>{const src=el.getAttribute('src')||'',t=(el.getAttribute('title')||'').trim();if(/youtube|youtu\.be/.test(src)&&(!t||/^(youtube|動画|iframe|埋め込み|https?:)/i.test(t)))addCandidate(el,id,'YouTube iframeのtitle確認',{src,title:t,field:'title'});});break;
+case 'HTML-R-15':w.querySelectorAll('table').forEach((el,i)=>{const cap=el.querySelector('caption');if(!cap||!cap.textContent.trim())addCandidate(el,id,'captionがないtable',{index:i+1,field:'caption'});});break;
+case 'HTML-R-16':w.querySelectorAll('table').forEach(el=>{if(el.querySelector('[rowspan],[colspan]'))addCandidate(el,id,'結合セルを含むtable',{mode:'detect-only'});});break;
+case 'HTML-W-02':w.querySelectorAll('table').forEach(el=>{if(!el.querySelector('th,caption')&&el.querySelectorAll('td').length<=6)addCandidate(el,id,'レイアウトtable疑い',{mode:'detect-only'});});break;
+case 'LINK-R-02':w.querySelectorAll('a').forEach(el=>{if(vagueTexts.includes(el.textContent.trim().toLowerCase()))addCandidate(el,id,'曖昧リンク文言',{href:el.getAttribute('href'),linkText:el.textContent.trim(),contextText:(el.parentElement&&el.parentElement.textContent||'').trim().slice(0,200),field:'replacementText'});});break;
+case 'LINK-R-04':w.querySelectorAll('a').forEach(el=>{const txt=el.textContent.trim(),href=el.getAttribute('href')||'';if(/^mailto:/i.test(href)||/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(txt))addCandidate(el,id,'メールアドレスリンク確認',{href,linkText:txt,field:'replacementText'});});break;
+case 'LINK-R-08':w.querySelectorAll('a[href*="#"]').forEach(el=>{const href=el.getAttribute('href')||'';if(!href.startsWith('#'))addCandidate(el,id,'別ページfragmentリンク',{href,linkText:el.textContent.trim(),mode:'detect-only'});});break;
+case 'LINK-R-09':w.querySelectorAll('a[href^="#"]').forEach(el=>{const tid=decodeURIComponent((el.getAttribute('href')||'').slice(1));if(tid&&!w.querySelector('#'+CSS.escape(tid)))addCandidate(el,id,'対応idがないページ内リンク',{href:el.getAttribute('href'),linkText:el.textContent.trim(),mode:'detect-only'});});break;
+case 'IMG-R-05':w.querySelectorAll('a img').forEach(el=>{const alt=(el.getAttribute('alt')||'').trim();if(genericAlt.includes(alt.toLowerCase()))addCandidate(el,id,'リンク画像のalt確認',{alt,href:el.closest('a').getAttribute('href'),field:'alt'});});break;
+case 'IMG-R-09':w.querySelectorAll('a[href]').forEach(el=>{if(/\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(el.getAttribute('href'))&&el.querySelector('img'))addCandidate(el,id,'画像ファイルへのリンク確認',{href:el.getAttribute('href'),text:el.textContent.trim(),field:'alt'});});break;
+case 'IMG-W-01':w.querySelectorAll('img').forEach(el=>{if(!(el.getAttribute('alt')||'').trim())addCandidate(el,id,'画像alt生成は手動LLM候補',{src:el.getAttribute('src'),field:'alt'});});break;
+case 'SKIP-04':Array.from(w.children).slice(-4).forEach(el=>{if(/問い合わせ|問合せ|担当|電話|FAX|ページトップ/.test(el.textContent))addCandidate(el,id,'末尾署名・問い合わせ候補',{text:el.textContent.trim().slice(0,200),field:'removeOrKeep'});});break;
+case 'HTML-R-08': if(/[0-9０-９]{1,4}[\/年月日:-]/.test(w.textContent)) addCandidate(w,id,'日付・時刻表記候補',{mode:'detect-only'}); break;
+case 'HTML-R-21': if(/[→←⇒※■□◆◇]/.test(w.textContent)) addCandidate(w,id,'記号表現候補',{mode:'detect-only'}); break;
+case 'LINK-R-06':w.querySelectorAll('p a[href^="#"]').forEach(el=>addCandidate(el,id,'文章中の内部リンク候補',{href:el.getAttribute('href'),mode:'detect-only'}));break;}
+r.status=state.candidates.length>before?(r.requiresReview?'要確認':'検出済み'):'対象なし';syncOutput(w);}catch(e){r.status='エラー';}render();}
+function findTarget(c){const w=parse();return {w,el:w.querySelector(c.selectorKey)};}
+function applyCandidate(cid){const c=state.candidates.find(x=>x.candidateId===cid);const v=(document.getElementById('field-'+cid)||{}).value||'';const action=(document.querySelector('input[name="action-'+cid+'"]:checked')||{}).value;const found=findTarget(c);if(!found.el){c.status='エラー';render();return;}if(c.ruleId==='SKIP-04'){if(action==='remove'){found.el.remove();c.status='適用済み';}else{c.status='スキップ';}}else if(c.ruleId==='HTML-R-15'){if(!v.trim()){c.status='エラー';render();return;}let cap=found.el.querySelector('caption');if(!cap){cap=document.createElement('caption');found.el.insertBefore(cap,found.el.firstChild);}cap.textContent=v.trim();c.status='適用済み';}else if(c.ruleId==='IMG-W-02'){found.el.setAttribute('title',v.trim());c.status='適用済み';}else if(c.ruleId==='IMG-R-05'){found.el.setAttribute('alt',v.trim());c.status='適用済み';}else if(c.ruleId==='IMG-R-09'){const img=found.el.matches('img')?found.el:found.el.querySelector('img');if(img)img.setAttribute('alt',v.trim());c.status='適用済み';}else if(['LINK-R-02','LINK-R-04'].includes(c.ruleId)){found.el.textContent=v.trim();c.status='適用済み';}else{c.status='スキップ';}syncOutput(found.w);updateRuleStatus(c.ruleId);render();}
+function skipCandidate(cid){const c=state.candidates.find(x=>x.candidateId===cid);c.status='スキップ';updateRuleStatus(c.ruleId);render();}
+function updateRuleStatus(ruleId){const r=state.rules.find(x=>x.id===ruleId),cs=state.candidates.filter(c=>c.ruleId===ruleId);if(!r||!cs.length)return;const done=cs.filter(c=>['適用済み','スキップ'].includes(c.status)).length,applied=cs.some(c=>c.status==='適用済み');r.status=done===cs.length?(applied?'適用済み':'スキップ'):(applied?'一部適用済み':'要確認');}
+function buildPrompt(cid){const c=state.candidates.find(x=>x.candidateId===cid);c.llmPrompt=A11yManualLlm.buildPrompt({candidateId:c.candidateId,ruleId:c.ruleId,message:c.message,payload:c.payload});render();}
+function validateLlm(cid){const c=state.candidates.find(x=>x.candidateId===cid);const txt=document.getElementById('llm-response-'+cid).value;const res=A11yManualLlm.validateResponse(c.ruleId,txt);c.llmResult=res;if(res.ok){const val=res.value;const input=document.getElementById('field-'+cid);if(input)input.value=val.replacementText||val.alt||val.caption||val.title||'';c.status='LLM候補反映済み';}else c.status='エラー';render();}
+function inputFor(c){if(c.payload.mode==='detect-only')return '<p class="small">検出専用候補です。内容確認後にスキップできます。</p>';if(c.ruleId==='SKIP-04')return `<div class="field"><label><input type="radio" name="action-${c.candidateId}" value="keep" checked>残す</label> <label><input type="radio" name="action-${c.candidateId}" value="remove">削除する</label></div>`;const label={ 'IMG-W-02':'title','HTML-R-15':'caption','LINK-R-02':'replacementText','LINK-R-04':'replacementText','IMG-R-05':'alt','IMG-R-09':'alt','IMG-W-01':'alt'}[c.ruleId]||'replacementText';return `<div class="field"><label>${label}<input id="field-${c.candidateId}" oninput="markEditing('${c.candidateId}')" value="${escapeAttr(c.payload[label]||'')}"></label></div>`;}
+function markEditing(cid){const c=state.candidates.find(x=>x.candidateId===cid);if(c&&c.status==='未確認')c.status='編集中';}
+function render(){document.getElementById('rules').innerHTML=state.rules.map(r=>`<div class="rule ${r.risk==='low'?'low':'warn'}"><label><input type="checkbox" ${r.enabled!==false?'checked':''} onchange="rToggle('${r.id}',this.checked)">${r.order}. ${r.id} ${escapeHtml(r.label)}</label><div class="status">${r.status||'未実行'}</div><button onclick="runRule('${r.id}')">個別実行</button><button onclick="skipRule('${r.id}')">スキップ</button></div>`).join('');document.getElementById('candidates').innerHTML=state.candidates.map(c=>`<div class="candidate ${c.status==='適用済み'?'applied':c.status==='エラー'?'error':''}"><b>${c.ruleId}</b> ${escapeHtml(c.message)}<div class="status">候補: ${c.status}</div><pre>${escapeHtml(JSON.stringify(c.payload,null,2))}</pre>${inputFor(c)}<div class="row"><button onclick="applyCandidate('${c.candidateId}')">HTMLへ適用</button><button onclick="skipCandidate('${c.candidateId}')">スキップ</button><button onclick="buildPrompt('${c.candidateId}')">LLM用プロンプトを作成</button></div>${c.llmPrompt?`<div class="llmBox"><label>LLM用プロンプト</label><textarea id="prompt-${c.candidateId}" rows="6">${escapeHtml(c.llmPrompt)}</textarea><button onclick="navigator.clipboard.writeText(document.getElementById('prompt-${c.candidateId}').value)">プロンプトをコピー</button><label>LLM回答JSON貼り戻し</label><textarea id="llm-response-${c.candidateId}" rows="5">${escapeHtml(c.llmResponse||'')}</textarea><button onclick="validateLlm('${c.candidateId}')">回答JSONを検証</button><div class="small">${c.llmResult?escapeHtml(c.llmResult.ok?'検証OK。入力欄へ反映しました。':c.llmResult.error):''}</div></div>`:''}</div>`).join('')||'候補はありません。';}
+function skipRule(id){const r=state.rules.find(x=>x.id===id);r.status='スキップ';render();}function rToggle(id,checked){state.rules.find(r=>r.id===id).enabled=checked;}function copyOutput(){navigator.clipboard.writeText(document.getElementById('output').value);}function resetAll(){document.getElementById('input').value=state.originalHtml;analyzeHtml();}function escapeHtml(s){return String(s).replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}function escapeAttr(s){return escapeHtml(s).replace(/"/g,'&quot;');}
+initTabs();render();
 </script></body></html>
