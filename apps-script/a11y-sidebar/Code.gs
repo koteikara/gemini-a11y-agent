@@ -11,7 +11,8 @@ function onOpen() {
 }
 
 function showA11ySidebar() {
-  var html = HtmlService.createHtmlOutputFromFile('Sidebar')
+  var html = HtmlService.createTemplateFromFile('Sidebar')
+    .evaluate()
     .setTitle('HTMLアクセシビリティ補正')
     .setWidth(480);
   SpreadsheetApp.getUi().showSidebar(html);
