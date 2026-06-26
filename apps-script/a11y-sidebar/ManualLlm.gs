@@ -15,6 +15,8 @@ var A11yManualLlm = (function () {
         alt: '画像alt案。不要な場合は省略可',
         caption: 'table caption案。不要な場合は省略可',
         title: 'iframe title案。不要な場合は省略可',
+        altAssessment: '画像alt判定。appropriate / needs_fix / inappropriate / unknown。不要な場合は省略可',
+        suggestedAlt: '画像付きalt評価の推奨alt。不要な場合は省略可',
         reason: '理由'
       }, null, 2)
     ].join('\n');
@@ -27,8 +29,8 @@ var A11yManualLlm = (function () {
       if (parsed.html || parsed.fullHtml || parsed.document) {
         return {ok:false,error:'HTML全体を書き換える回答は受け付けません。'};
       }
-      if (!parsed.replacementText && !parsed.alt && !parsed.caption && !parsed.title) {
-        return {ok:false,error:'replacementText / alt / caption / title のいずれかが必要です。'};
+      if (!parsed.replacementText && !parsed.alt && !parsed.caption && !parsed.title && !parsed.suggestedAlt) {
+        return {ok:false,error:'replacementText / alt / caption / title / suggestedAlt のいずれかが必要です。'};
       }
       return {ok:true,value:parsed};
     } catch (e) {

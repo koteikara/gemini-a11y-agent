@@ -96,3 +96,12 @@ timestamp: 2026-06-25T00:00:00+09:00
 - `A11Y_API_USAGE_LOG` に成功・エラー・検証エラーのログが残る。
 - 出力HTMLに `data-a11y-candidate-id` が残らない。
 - 既存Colab/Python本体に差分がない。
+
+## 期待HTML・画像/alt検証
+
+- `apps-script/a11y-sidebar/samples/sample-expected-auto.html` があること。
+- `apps-script/a11y-sidebar/samples/sample-expected-reviewed.html` があること。
+- `apps-script/a11y-sidebar/samples/sample-review-steps.md` の標準値で reviewed に到達できること。
+- サイドバーに「検証」タブが表示され、出力HTMLを取り込んで期待HTMLと比較できること。
+- IMG-R-05 / IMG-R-09 / IMG-W-01 の候補で画像プレビュー、現在alt、判定結果、推奨altを確認できること。
+- API使用時は使用履歴に `imageMode`、`imageSourceResolved`、`imageMimeType`、`altAssessment`、`suggestedAlt` が残ること。
