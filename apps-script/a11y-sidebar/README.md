@@ -172,3 +172,19 @@ estimatedJpy = estimatedUsd * currencyRateUsdJpy
 ```
 
 料金モードが `unknown` の場合、token数のみ記録し、金額は空欄にします。概算金額は参考値であり、実際の請求額、無料枠、割引、価格改定、レート制限とは異なる場合があります。
+
+## 期待HTML比較と画像/alt検証
+
+`samples/sample-input.html` は、外部依存なしで画像プレビューできる data URI SVG を含みます。ガイド冊子風のリンク画像は `イベント案内ガイド`、会場サムネイルは `会場写真を拡大して表示` を標準altとします。
+
+追加サンプル:
+
+- `samples/sample-expected-auto.html`: HTML解析直後の低リスク自動補正後HTMLです。`iframe` の `frameborder` 削除などを確認します。
+- `samples/sample-expected-reviewed.html`: 標準レビュー値を適用し、問い合わせ/ページトップ候補を削除した期待HTMLです。
+- `samples/sample-review-steps.md`: reviewedへ到達するための入力値と、検出のみで自動変更しないルールをまとめています。
+
+サイドバーの「検証」タブでは、現在の出力HTMLを取り込み、期待HTMLを手貼りまたは内蔵サンプルから読み込んで比較できます。比較前に `data-a11y-candidate-id`、タグ間空白、連続空白を正規化します。
+
+画像プレビューは data URI、absolute HTTP/HTTPS URL、相対URL + ベースURLに対応します。相対URLを使う場合はHTML補正タブの「ベースURL（任意）」に公開元URLを入力してください。画像を取得できない場合、プレビューやAPI評価は画像なしのテキスト評価へフォールバックします。
+
+Gemini API連携では、IMG-R-05 / IMG-R-09 / IMG-W-01 の候補について画像を取得できる場合に `generateContent` へテキストと画像の複数Partを送信し、`appropriate` / `needs_fix` / `inappropriate` / `unknown` の `altAssessment` と `suggestedAlt` を受け取ります。使用履歴シートには `imageMode`、`imageSourceResolved`、`imageMimeType`、`altAssessment`、`suggestedAlt` を記録します。
