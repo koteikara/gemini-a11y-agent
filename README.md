@@ -74,6 +74,7 @@
 
 ## ドキュメント
 
+- 出力HTML品質監査: [`docs/output-html-quality-audit.md`](docs/output-html-quality-audit.md)
 - a11y hybrid detect/fix ルール: [`docs/a11y-hybrid-detect-fix-rules.md`](docs/a11y-hybrid-detect-fix-rules.md)
   - report-only 検出ロジックの確認: `python tools/check_hybrid_rules.py` / `python tools/check_hybrid_rule_detection.py`
   - 検出テストは候補抽出と `auto_fix=False`、入力HTML非変更のみを確認します。自動修正はまだ有効化しておらず、fixture / gold / ai-v1.0 出力は変更しません。
