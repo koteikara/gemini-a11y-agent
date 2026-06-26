@@ -336,11 +336,18 @@ def process_extracted_html(
 
                     table_outer_html, detail = parse_single_table_response(out)
                     if table_outer_html is None:
-                        print(
-                            f"    ⚠️ LLM(tables) fallback keep-original:"
-                            f" block={b} table={table_key} reason=invalid_table_response"
-                            f" detail={format_table_response_detail(detail)}"
-                        )
+                        if detail.get("unsafe_reason"):
+                            print(
+                                "    [table-fix] rejected LLM table output: "
+                                f"{detail.get('unsafe_reason')} block={b} table={table_key}"
+                            )
+                            print("    [table-fix] fallback to original table")
+                        else:
+                            print(
+                                f"    ⚠️ LLM(tables) fallback keep-original:"
+                                f" block={b} table={table_key} reason=invalid_table_response"
+                                f" detail={format_table_response_detail(detail)}"
+                            )
                         continue
 
                     new_table = BeautifulSoup(table_outer_html, "html.parser").find("table")
@@ -605,11 +612,18 @@ def process_page(row: dict, client, vision_cache: dict) -> dict:
 
                     table_outer_html, detail = parse_single_table_response(out)
                     if table_outer_html is None:
-                        print(
-                            f"    ⚠️ LLM(tables) fallback keep-original:"
-                            f" block={b} table={table_key} reason=invalid_table_response"
-                            f" detail={format_table_response_detail(detail)}"
-                        )
+                        if detail.get("unsafe_reason"):
+                            print(
+                                "    [table-fix] rejected LLM table output: "
+                                f"{detail.get('unsafe_reason')} block={b} table={table_key}"
+                            )
+                            print("    [table-fix] fallback to original table")
+                        else:
+                            print(
+                                f"    ⚠️ LLM(tables) fallback keep-original:"
+                                f" block={b} table={table_key} reason=invalid_table_response"
+                                f" detail={format_table_response_detail(detail)}"
+                            )
                         continue
 
                     new_table = BeautifulSoup(table_outer_html, "html.parser").find("table")

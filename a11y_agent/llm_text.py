@@ -46,6 +46,10 @@ def prompt_tables(html: str) -> str:
 - 修正対象は table要素のアクセシビリティ関連のみ（caption/thead/th/scope など）
 - セル文言（テキスト）を変えない
 - タグ名・属性名を創作しない（既存HTMLの範囲で修正）
+- <row>、</row>、<cell>、</cell> はHTML標準タグではないため絶対に使用しない
+- 行は <tr>、セルは <td> または <th> を使用する
+- 壊れた閉じタグやエスケープされたHTML断片を出力しない
+- 判断に迷う場合は、元のtable構造を大きく変更しない
 - 入力HTML全体を、同じ順序・同じ要素構成で返す（tableだけ返すのは禁止）
 修正後のHTMLのみを出力（Markdown不可）。
 
