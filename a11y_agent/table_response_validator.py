@@ -1,8 +1,7 @@
 from collections import Counter
+from html.parser import HTMLParser
 import re
 from typing import Dict, Optional, Tuple
-
-from lxml import html as lxml_html
 
 
 _ALLOWED_NON_VISIBLE_OUTSIDE_TABLE = {
@@ -17,26 +16,112 @@ _ALLOWED_NON_VISIBLE_OUTSIDE_TABLE = {
     "noscript",
 }
 
+UNSAFE_TABLE_OUTPUT_PATTERNS = (
+    (
+        re.compile(
+            r"&lt;\s*/\s*</\s*(row|cell|tr|td|th|table)(?=[\s>/])",
+            re.IGNORECASE,
+        ),
+        "broken_escaped_closing_fragment_found",
+    ),
+    (
+        re.compile(r"<\s*/?\s*(row|cell)(?=[\s>/])", re.IGNORECASE),
+        "pseudo_row_cell_tags_found",
+    ),
+)
+
+
+def detect_unsafe_table_output(resp_html: str) -> Optional[str]:
+    """Return a short rejection reason when LLM table HTML is unsafe."""
+    text = resp_html or ""
+    for pattern, reason in UNSAFE_TABLE_OUTPUT_PATTERNS:
+        if pattern.search(text):
+            return reason
+    return None
+
 
 def _normalize_space(text: str) -> str:
     return re.sub(r"\s+", "", text or "")
 
 
-def _is_descendant_of(node, ancestor) -> bool:
-    p = node
-    while p is not None:
-        if p is ancestor:
-            return True
-        p = p.getparent()
-    return False
+def _attrs_to_html(attrs) -> str:
+    rendered = []
+    for key, value in attrs:
+        if value is None:
+            rendered.append(key)
+        else:
+            escaped = str(value).replace("&", "&amp;").replace('"', "&quot;")
+            rendered.append(f'{key}="{escaped}"')
+    return (" " + " ".join(rendered)) if rendered else ""
 
 
-def _validate_table_shape(table_el) -> bool:
-    rows = table_el.xpath(".//tr")
-    if len(rows) < 1:
-        return False
-    first_cells = rows[0].xpath("./th|./td")
-    return len(first_cells) >= 2
+class _TableSafetyParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=False)
+        self.tables_found = 0
+        self.table_depth = 0
+        self.disallowed_outside_tags = []
+        self.stray_table_cell_tags = []
+        self.outside_text_parts = []
+        self.table_parts = []
+        self.table_row_count = 0
+        self.first_row_cell_count = 0
+        self._current_row_cell_count = 0
+        self._seen_first_row = False
+
+    def _in_table(self) -> bool:
+        return self.table_depth > 0
+
+    def handle_starttag(self, tag, attrs):
+        tag = tag.lower()
+        if tag == "table":
+            self.tables_found += 1
+            self.table_depth += 1
+        elif not self._in_table():
+            if tag in {"tr", "td", "th"}:
+                self.stray_table_cell_tags.append(tag)
+            elif tag not in _ALLOWED_NON_VISIBLE_OUTSIDE_TABLE:
+                self.disallowed_outside_tags.append(tag)
+
+        if self._in_table():
+            self.table_parts.append(f"<{tag}{_attrs_to_html(attrs)}>")
+            if tag == "tr":
+                self.table_row_count += 1
+                self._current_row_cell_count = 0
+            elif tag in {"td", "th"} and self.table_row_count == 1:
+                self._current_row_cell_count += 1
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+        if self._in_table():
+            self.table_parts.append(f"</{tag}>")
+            if tag == "tr" and not self._seen_first_row:
+                self.first_row_cell_count = self._current_row_cell_count
+                self._seen_first_row = True
+        elif tag in {"tr", "td", "th"}:
+            self.stray_table_cell_tags.append(tag)
+
+        if tag == "table" and self.table_depth > 0:
+            self.table_depth -= 1
+
+    def handle_startendtag(self, tag, attrs):
+        tag = tag.lower()
+        if self._in_table():
+            self.table_parts.append(f"<{tag}{_attrs_to_html(attrs)} />")
+        elif tag not in _ALLOWED_NON_VISIBLE_OUTSIDE_TABLE:
+            self.disallowed_outside_tags.append(tag)
+
+    def handle_data(self, data):
+        if self._in_table():
+            self.table_parts.append(data)
+        else:
+            self.outside_text_parts.append(data)
+
+    def handle_entityref(self, name):
+        self.handle_data(f"&{name};")
+
+    def handle_charref(self, name):
+        self.handle_data(f"&#{name};")
 
 
 def parse_single_table_response(resp_html: str) -> Tuple[Optional[str], Dict[str, object]]:
@@ -49,58 +134,40 @@ def parse_single_table_response(resp_html: str) -> Tuple[Optional[str], Dict[str
         "non_table_text_len": 0,
         "raw_head": (resp_html or "")[:200],
         "table_shape_ok": False,
+        "unsafe_reason": "",
+        "stray_table_cell_tags": [],
     }
 
+    unsafe_reason = detect_unsafe_table_output(resp_html or "")
+    if unsafe_reason:
+        detail["unsafe_reason"] = unsafe_reason
+        return None, detail
+
     try:
-        wrapped = f"<div data-llm-table-root='1'>{resp_html or ''}</div>"
-        root = lxml_html.fromstring(wrapped)
+        parser = _TableSafetyParser()
+        parser.feed(resp_html or "")
+        parser.close()
         detail["parse_ok"] = True
-        tables = root.xpath(".//table")
-        detail["tables_found"] = len(tables)
-        if len(tables) != 1:
-            return None, detail
-
-        table_el = tables[0]
-
-        # table外の可視タグ混入を検知（html/body等のラッパーやscript/styleは許可）。
-        outside_tags = []
-        for el in root.xpath(".//*"):
-            if not isinstance(el.tag, str):
-                continue
-            tag = el.tag.lower()
-            if tag == "div" and el.get("data-llm-table-root") == "1":
-                continue
-            if _is_descendant_of(el, table_el):
-                continue
-            if tag in _ALLOWED_NON_VISIBLE_OUTSIDE_TABLE:
-                continue
-            outside_tags.append(tag)
-
-        detail["has_non_table_elements"] = bool(outside_tags)
+        detail["tables_found"] = parser.tables_found
+        detail["has_non_table_elements"] = bool(parser.disallowed_outside_tags)
         detail["non_table_tags_sample"] = [
-            tag for tag, _ in Counter(outside_tags).most_common(5)
+            tag for tag, _ in Counter(parser.disallowed_outside_tags).most_common(5)
         ]
+        detail["non_table_text_len"] = len(_normalize_space("".join(parser.outside_text_parts)))
+        detail["table_shape_ok"] = parser.table_row_count >= 1 and parser.first_row_cell_count >= 1
+        detail["stray_table_cell_tags"] = sorted(set(parser.stray_table_cell_tags))
 
-        text_nodes = root.xpath(
-            "//text()["
-            "not(ancestor::table) and "
-            "not(ancestor::script) and "
-            "not(ancestor::style) and "
-            "not(ancestor::noscript) and "
-            "not(ancestor::head) and "
-            "not(ancestor::title)]"
-        )
-        outside_text = _normalize_space("".join(text_nodes))
-        detail["non_table_text_len"] = len(outside_text)
-
-        detail["table_shape_ok"] = _validate_table_shape(table_el)
-
+        if parser.tables_found != 1:
+            return None, detail
+        if detail["stray_table_cell_tags"]:
+            detail["unsafe_reason"] = "table_row_or_cell_outside_table"
+            return None, detail
         if detail["has_non_table_elements"] or detail["non_table_text_len"] > 0:
             return None, detail
         if not detail["table_shape_ok"]:
             return None, detail
 
-        return lxml_html.tostring(table_el, encoding="unicode"), detail
+        return "".join(parser.table_parts), detail
     except Exception:
         return None, detail
 
@@ -109,7 +176,8 @@ def format_table_response_detail(detail: Dict[str, object]) -> str:
     """ログ用に検証内訳を短く整形。"""
     return (
         "parse_ok={} tables_found={} has_non_table_elements={} "
-        "non_table_tags_sample={} non_table_text_len={} table_shape_ok={} raw_head={!r}"
+        "non_table_tags_sample={} non_table_text_len={} table_shape_ok={} "
+        "unsafe_reason={} stray_table_cell_tags={} raw_head={!r}"
     ).format(
         "Y" if detail.get("parse_ok") else "N",
         detail.get("tables_found", 0),
@@ -117,5 +185,7 @@ def format_table_response_detail(detail: Dict[str, object]) -> str:
         detail.get("non_table_tags_sample", []),
         detail.get("non_table_text_len", 0),
         "Y" if detail.get("table_shape_ok") else "N",
+        detail.get("unsafe_reason", ""),
+        detail.get("stray_table_cell_tags", []),
         detail.get("raw_head", ""),
     )
